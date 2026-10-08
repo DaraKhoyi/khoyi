@@ -17,7 +17,7 @@ import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/F
 import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
-import { MODES, VIEW_TO_MODE, modeById, roomEntry, launchTarget } from './modes';
+import { MODES, VIEW_TO_MODE, modeById, roomEntry, launchTarget, holdLaunch, takeHeldLaunch } from './modes';
 import { rememberRoomSpot, roomResumeSpot } from './roomResume';
 import { PAGES, PAGE_GROUPS, pageVisible, roleAllows, makeEntitled, ALL_FEATURES } from './pages';
 const CallDetail = lazyWithReload(() => import('./views/CallDetail'));
@@ -1086,15 +1086,18 @@ function AppMain() {
   // guard, which owns history for the modal stack.
   // Whitelisted on purpose: a launcher is user input like any other, and ?view=
   // should not be able to poke at an arbitrary internal string.
+  const [settingsLaunch, setSettingsLaunch] = useState({ tab: null, n: 0 });   // ?view=settings&tab=setup
+  const applyLaunch = (t) => {
+    setView(t.view);
+    if (t.sub) setDeepLink(d => ({ view: t.view, sub: t.sub, n: d.n + 1 }));
+    if (t.tab) { if (t.view === 'settings') setSettingsLaunch(s => ({ tab: t.tab, n: s.n + 1 })); else window.__investorTab = t.tab; }
+  };
   useEffect(() => {
     const t = launchTarget(window.location.search);   // whitelisted; see modes.js
-    if (t) {
-      setView(t.view);
-      if (t.sub) setDeepLink(d => ({ view: t.view, sub: t.sub, n: d.n + 1 }));
-      if (t.tab) window.__investorTab = t.tab;
-    }
+    if (t) { applyLaunch(t); holdLaunch(window.location.search); }   // held: survives a sign-in
     try { window.history.replaceState({}, '', '/'); } catch (_) {}
-  }, []);
+  }, []); // eslint-disable-line
+  useEffect(() => { if (session) { const t = takeHeldLaunch(); if (t) applyLaunch(t); } }, [session]); // eslint-disable-line
 
   // ?shared=audio; pull it out and open the "Share a recording" flow.
   useEffect(() => {
@@ -1546,6 +1549,7 @@ function AppMain() {
     // is wrong when the user just wants to look someone up.
     // Lets a component deep-link a view WITH a filter (Morning Brief -> contacts:owe).
     window.__deepLink = (d) => { try { if (d && d.view) setDeepLink({ view: d.view, sub: d.sub || null, n: d.n || Date.now() }); } catch (_) {} };
+    window.__openSettings = (tab) => { setView('settings'); if (tab) setSettingsLaunch(s => ({ tab, n: s.n + 1 })); };
     window.__openContact = (contactId) => { try { if (!contactId) return; window.__pendingOpenContact = contactId; navigate('contacts'); } catch (_) {} };
     window.__openContactResearch = (contactId, prefill, hint) => { try { window.__autoResearchHint = hint || (prefill && prefill.hint) || null; if (contactId) { window.__pendingResearch = contactId; } else if (prefill) { window.__pendingContactPrefill = prefill; } navigate('contacts'); } catch (_) {} };
     window.__setView = (v) => { try { navigate(v); } catch (_) {} };  // used by the automated smoke-check harness
@@ -1920,7 +1924,7 @@ function AppMain() {
               : view==='teams' ? <TeamsAdmin userId={user.id} />
               : view==='actas' ? <ActAsPicker userId={user.id} />
               : view==='announcements' ? <AnnouncementsAdmin userId={user.id} isAdmin={isAdmin} />
-              : view==='settings'    ? <SettingsView user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin} entitlements={entitlements} reloadEntitlements={reloadEntitlements} licensingEnforced={licensingEnforced}/>
+              : view==='settings'    ? <SettingsView launchTab={settingsLaunch.tab} launchNonce={settingsLaunch.n} user={user} priorityPref={priorityPref} onPriorityPrefChange={setPriorityPref} emailAccounts={emailAccounts} setEmailAccounts={setEmailAccounts} emailAliases={emailAliases} setEmailAliases={setEmailAliases} userId={user.id} userSettings={userSettings} setUserSettings={setUserSettings} isAdmin={isAdmin} entitlements={entitlements} reloadEntitlements={reloadEntitlements} licensingEnforced={licensingEnforced}/>
               : null}
                 </React.Suspense>
               </ViewErrorBoundary>

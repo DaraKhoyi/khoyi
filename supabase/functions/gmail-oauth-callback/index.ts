@@ -5,6 +5,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyState, escapeHtml, DEFAULT_RETURN } from "../_shared/oauthState.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,7 +32,7 @@ serve(async (req) => {
 
   if (error) {
     return new Response(
-      htmlPage("Connection cancelled", `<h1>Connection cancelled</h1><p>Google reported: ${error}</p><p><a href="https://darasapp.com/">Return to Prism</a></p>`),
+      htmlPage("Connection cancelled", `<h1>Connection cancelled</h1><p>Google reported: ${escapeHtml(error)}</p><p><a href="https://darasapp.com/">Return to Prism</a></p>`),
       { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   }
@@ -44,15 +45,14 @@ serve(async (req) => {
   }
 
   try {
-    // Decode state
-    let stateObj;
-    try {
-      stateObj = JSON.parse(atob(state));
-    } catch {
-      throw new Error("Invalid state parameter");
-    }
-    const userId = stateObj.uid;
-    const returnTo = stateObj.rt || "https://darasapp.com/";
+    // SIGNED STATE (8 Oct 2026). The user id and return address used to be
+    // read straight out of base64 JSON that anyone could write. verifyState
+    // rejects anything we did not issue, anything altered, and anything older
+    // than 15 minutes, and only ever returns one of our own origins. It runs
+    // BEFORE the code is exchanged, so a forged state never touches Google.
+    const verified = await verifyState(state);
+    const userId = verified.uid;
+    const returnTo = verified.rt || DEFAULT_RETURN;
 
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
@@ -145,7 +145,7 @@ serve(async (req) => {
     return new Response(
       htmlPage(
         "Connection failed",
-        `<h1>Connection failed</h1><p>${String(err).slice(0, 400)}</p><p><a href="https://darasapp.com/">Return to Prism</a></p>`,
+        `<h1>Connection failed</h1><p>${escapeHtml(String(err).slice(0, 400))}</p><p><a href="https://darasapp.com/">Return to Prism</a></p>`,
       ),
       { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );

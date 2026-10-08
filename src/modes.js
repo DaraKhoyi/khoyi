@@ -216,9 +216,13 @@ export function roomEntry(mode) {
 // list — Prospect, Contacts, Tasks, Money — and each entry is a URL. Both values
 // are whitelisted because a shortcut is user input like any other and must not
 // be able to poke at an arbitrary internal string.
+// 'settings' (8 Oct 2026): reconnect emails link straight to
+// /?view=settings&tab=setup, so an agent lands on Connected Google Accounts
+// instead of hunting for it. Its tab is whitelisted like everything else here.
 const LAUNCH_VIEWS = ['dashboard','prospecting','tasks','calendar','contacts','inbox','quo',
-  'journal','numbers','chat','finance','documents','mileage','production','investor_pipeline'];
+  'journal','numbers','chat','finance','documents','mileage','production','investor_pipeline','settings'];
 const LAUNCH_SUBS = ['ledger','blueprint','dashboard','reports','today','roi','library'];
+const SETTINGS_TABS = ['setup','prefs','ai','account'];
 
 export function launchTarget(search) {
   try {
@@ -226,6 +230,25 @@ export function launchTarget(search) {
     const view = q.get('view');
     if (!view || !LAUNCH_VIEWS.includes(view)) return null;
     const sub = q.get('sub');
-    return { view, sub: sub && LAUNCH_SUBS.includes(sub) ? sub : null, tab: q.get('tab') || null };
+    const tab = q.get('tab') || null;
+    if (view === 'settings') return { view, sub: null, tab: tab && SETTINGS_TABS.includes(tab) ? tab : null };
+    return { view, sub: sub && LAUNCH_SUBS.includes(sub) ? sub : null, tab };
+  } catch (_) { return null; }
+}
+
+// A link opened while signed out must still land where it pointed once the
+// person signs in. The query string is wiped on boot, so the target is held in
+// this tab's sessionStorage for 30 minutes and taken once a session exists.
+const HELD_KEY = 'prism_held_launch';
+export function holdLaunch(search) {
+  try { if (launchTarget(search)) sessionStorage.setItem(HELD_KEY, JSON.stringify({ q: String(search), at: Date.now() })); } catch (_) {}
+}
+export function takeHeldLaunch() {
+  try {
+    const raw = sessionStorage.getItem(HELD_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(HELD_KEY);
+    const { q, at } = JSON.parse(raw);
+    return Date.now() - at < 30 * 60 * 1000 ? launchTarget(q) : null;
   } catch (_) { return null; }
 }

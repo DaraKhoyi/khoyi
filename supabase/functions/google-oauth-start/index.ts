@@ -6,11 +6,21 @@
 //   purpose='both'     -> everything (single account doing both)
 //   purpose='contacts' -> Google Contacts (People API)
 //
-// Body: { return_to?: string, purpose?: 'email'|'calendar'|'both' }
-// Returns: { url: string, state: string }
+//   purpose='full'     -> email + calendar + contacts (first-run setup)
+//
+// Body: { return_to?: string, purpose?: string, purposes?: string[], login_hint?: string }
+//   `purposes` (8 Oct 2026) asks for several at once. A RECONNECT must ask for
+//   everything the mailbox had: Google drops every scope when a grant expires,
+//   so asking for one purpose brought back only that one and the others stayed
+//   silently broken while their badges still showed.
+// Returns: { url: string, purposes: string[] }
+//
+// The state is SIGNED (see _shared/oauthState.ts) and carries the user id from
+// the caller's JWT only. The callback refuses any state it did not issue.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { signState, safeReturnTo } from "../_shared/oauthState.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,13 +54,28 @@ const CONTACTS_SCOPES = [
   "https://www.googleapis.com/auth/contacts",
 ];
 
-function scopesForPurpose(purpose) {
+const KNOWN_PURPOSES = ["email", "calendar", "drive", "contacts"];
+
+// 'both' and 'full' are shorthands. 'full' is what first-run setup sends; until
+// 8 Oct it matched nothing here and quietly fell through to Gmail only.
+function expandPurposes(purpose: unknown, purposes: unknown): string[] {
+  const out = new Set<string>();
+  const raw = Array.isArray(purposes) && purposes.length ? purposes : [purpose || "email"];
+  for (const p of raw) {
+    if (p === "both") { out.add("email"); out.add("calendar"); }
+    else if (p === "full") { out.add("email"); out.add("calendar"); out.add("contacts"); }
+    else if (KNOWN_PURPOSES.includes(p)) out.add(p);
+  }
+  if (!out.size) out.add("email");
+  return [...out];
+}
+
+function scopesForPurposes(list: string[]) {
   const set = new Set(IDENTITY_SCOPES);
-  if (purpose === "email" || purpose === "both") GMAIL_SCOPES.forEach(s => set.add(s));
-  if (purpose === "calendar" || purpose === "both") CALENDAR_SCOPES.forEach(s => set.add(s));
-  if (purpose === "drive") DRIVE_SCOPES.forEach(s => set.add(s));
-  if (purpose === "contacts") CONTACTS_SCOPES.forEach(s => set.add(s));
-  if (set.size === IDENTITY_SCOPES.length) GMAIL_SCOPES.forEach(s => set.add(s));
+  if (list.includes("email")) GMAIL_SCOPES.forEach(s => set.add(s));
+  if (list.includes("calendar")) CALENDAR_SCOPES.forEach(s => set.add(s));
+  if (list.includes("drive")) DRIVE_SCOPES.forEach(s => set.add(s));
+  if (list.includes("contacts")) CONTACTS_SCOPES.forEach(s => set.add(s));
   return [...set];
 }
 
@@ -85,13 +110,12 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const returnTo = (body && body.return_to) || "https://darasapp.com/";
-    const purpose = (body && body.purpose) || "email";
+    const returnTo = safeReturnTo(body && body.return_to);
+    const purposes = expandPurposes(body && body.purpose, body && body.purposes);
+    const scopes = scopesForPurposes(purposes);
 
-    const scopes = scopesForPurpose(purpose);
-
-    const stateObj = { uid: user.id, rt: returnTo, purpose, ts: Date.now() };
-    const state = btoa(JSON.stringify(stateObj));
+    // The user id comes from the verified JWT above — never from the body.
+    const state = await signState({ uid: user.id, rt: returnTo, purposes });
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -103,10 +127,16 @@ serve(async (req) => {
       include_granted_scopes: "true",
       state,
     });
+    // Pre-select the right Google account on a reconnect. Someone with two
+    // Google accounts (Alex has a work and a personal one) otherwise has to pick,
+    // and picking the wrong one creates a second connection instead of fixing
+    // the broken one.
+    const hint = body && typeof body.login_hint === "string" ? body.login_hint.trim() : "";
+    if (hint && hint.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(hint)) params.set("login_hint", hint);
 
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 
-    return new Response(JSON.stringify({ url, state, purpose }), {
+    return new Response(JSON.stringify({ url, purposes, purpose: purposes.join(",") }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
