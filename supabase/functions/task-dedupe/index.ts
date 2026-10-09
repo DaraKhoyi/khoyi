@@ -5,6 +5,7 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODELS = ["claude-sonnet-4-6", "claude-3-5-sonnet-20241022"];
 
@@ -19,7 +20,11 @@ serve(async (req) => {
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
     const { data: { user } } = await sb.auth.getUser(token);
     const body = await req.json().catch(() => ({}));
-    const uid = user?.id || body.user_id;
+    // Whose tasks: the signed-in caller's, always. body.user_id is honoured ONLY
+    // for a verified service caller (8 Oct 2026, security batch 1: this used to
+    // fall back to body.user_id for anyone, so a signed-out request could read
+    // any user's open tasks).
+    const uid = user?.id || ((body.user_id && await isServiceCaller(req)) ? body.user_id : null);
     if (!uid) return J({ error: "Not authenticated" }, 401);
     const proposed = body.proposed || {};
     const pTitle = String(proposed.title || "").trim();

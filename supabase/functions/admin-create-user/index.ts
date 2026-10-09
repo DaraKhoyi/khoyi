@@ -36,6 +36,22 @@ serve(async (req) => {
     const { data: agent } = await db.from("agents").select("*").eq("id", agent_id).eq("user_id", ownerId).maybeSingle();
     if (!agent) return new Response(JSON.stringify({ error: "Agent not found in your brokerage" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
 
+    // OWNER-ONLY POWERS (8 Oct 2026, security batch 1). This function runs with
+    // the service role, so the database's agents guard does not apply here; the
+    // same rules are enforced in code. A broker_admin can still create logins
+    // and reset passwords for ordinary agents, but cannot:
+    //   * reset or create the login of the owner or of another brokerage admin
+    //     (resetting the owner's password was a full takeover), or
+    //   * change anyone's role (the owner does that in the roster).
+    const callerIsOwner = isPlatform || callerAgent?.role === "owner";
+    const J403 = (m: string) => new Response(JSON.stringify({ error: m }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    if (!callerIsOwner) {
+      if (["owner", "broker_admin"].includes(agent.role)) return J403("Only the owner can manage the login of an owner or brokerage admin");
+      if (role && role !== agent.role) return J403("Only the owner can change an agent's role");
+    }
+    if (role && !["agent", "team_leader", "broker_admin", "owner"].includes(role)) return new Response(JSON.stringify({ error: "Unknown role" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    if (role === "owner" && agent.role !== "owner") return J403("The owner role cannot be given from here");
+
     if (action === "reset") {
       if (!agent.auth_user_id) return new Response(JSON.stringify({ error: "This agent has no login yet" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
       if (!password || password.length < 8) return new Response(JSON.stringify({ error: "Password must be at least 8 characters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
@@ -50,7 +66,7 @@ serve(async (req) => {
     const { data: created, error } = await db.auth.admin.createUser({ email: email.toLowerCase().trim(), password, email_confirm: true, user_metadata: { full_name: agent.name, role: role || agent.role } });
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     const upd: any = { auth_user_id: created.user.id, email: email.toLowerCase().trim(), updated_at: new Date().toISOString() };
-    if (role) upd.role = role;
+    if (role && role !== agent.role) upd.role = role;
     await db.from("agents").update(upd).eq("id", agent_id);
     return new Response(JSON.stringify({ ok: true, auth_user_id: created.user.id }), { headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {

@@ -80,6 +80,11 @@ if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/snapshot_qu
 # contacts.tax_id_last4 and iCloud key.) Its static half runs without a PAT.
 if [ "$LANE" = full ]; then node smoke/definer_guard.mjs; else SUPABASE_PAT= node smoke/definer_guard.mjs; fi
 
+# Security batch 1 (8 Oct 2026): no public sign-up, no self-made owner or team,
+# no signed-out task, alert, scoreboard or log-wipe calls, act-as that expires.
+# Static half in both lanes; the live half (anon-key probes only) in full. BLOCKS.
+guard access_batch1 static
+
 # Every deployed edge function has source here, and config.toml's verify_jwt
 # matches live — or the next deploy flips it and locks out a cron caller. BLOCKS.
 if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/function_config.mjs; fi
