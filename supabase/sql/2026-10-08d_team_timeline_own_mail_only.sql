@@ -22,6 +22,9 @@
 -- ROLLBACK: supabase/sql/rollback/2026-10-08d_team_timeline_own_mail_only.down.sql
 -- =====================================================================
 begin;
+-- Fail fast instead of queueing behind live Gmail/sync traffic (a 9 Oct dry run
+-- deadlocked on a busy table). A timeout rolls the whole file back; re-run apply-sql.
+set local lock_timeout = '5s';
 
 do $f$
 declare

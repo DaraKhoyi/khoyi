@@ -43,6 +43,9 @@
 -- (drops the policies and the guard lines; keeps the column, which is harmless).
 -- =====================================================================
 begin;
+-- Fail fast instead of queueing behind live Gmail/sync traffic (a 9 Oct dry run
+-- deadlocked on a busy table). A timeout rolls the whole file back; re-run apply-sql.
+set local lock_timeout = '5s';
 
 alter table public.impersonation_log add column if not exists session_id uuid;
 create index if not exists impersonation_log_session_id_idx
