@@ -31,3 +31,23 @@ export function legacyPurpose(list) {
   if (l.includes('email') && l.includes('calendar')) return 'both';
   return l[0] || 'email';
 }
+
+// What Google's grant is MISSING for the purposes PrismOS has this mailbox
+// down for (9 Oct 2026). A reconnect that unticks a box (Alex ticked contacts
+// only) leaves purposes saying "email, calendar" while the token can't reach
+// either; sync then failed quietly ~30 times an hour. The app now shows a
+// Reconnect Google banner instead. Scopes are only judged when Google recorded
+// some, so an old row with no scopes is never flagged on guesswork.
+const SCOPE_TEST = {
+  email: (s) => s.includes('gmail'),
+  calendar: (s) => s.includes('auth/calendar'),
+  contacts: (s) => s.includes('auth/contacts'),
+  drive: (s) => s.includes('auth/drive'),
+};
+
+export function missingPurposes(account) {
+  const scopes = (Array.isArray(account?.scopes) ? account.scopes : []).map((s) => String(s || '')).filter(Boolean);
+  if (!scopes.length || account?.is_active === false) return [];
+  const purposes = Array.isArray(account?.purposes) ? account.purposes : [];
+  return ORDER.filter((p) => purposes.includes(p) && SCOPE_TEST[p] && !scopes.some(SCOPE_TEST[p]));
+}

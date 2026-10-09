@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { confirmDialog } from '../notify';
 import { Icon } from '../icons';
-import { reconnectPurposes, legacyPurpose } from '../lib/googleReconnect';
+import { reconnectPurposes, legacyPurpose, missingPurposes } from '../lib/googleReconnect';
 
 export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) {
   const [connecting, setConnecting] = useState(false);
@@ -159,6 +159,15 @@ export default function EmailAccountsPanel({ emailAccounts, setEmailAccounts }) 
                           onClick={()=>{ const ps = reconnectPurposes(a); startConnect(legacyPurpose(ps), a.email_address, ps); }}
                           title={`Reconnect ${a.email_address} — asks Google for everything it had: ${reconnectPurposes(a).join(', ')}`}>
                           {connecting ? 'Opening Google…' : 'Reconnect now'}
+                        </button>
+                      </div>
+                    ) : missingPurposes(a).length ? (
+                      <div data-testid="google-missing-scope" style={{marginTop:'6px',padding:'8px 10px',background:'rgba(197,169,94,0.12)',border:'1px solid var(--accent)',borderRadius:'8px'}}>
+                        <div style={{fontSize:'12px',color:'var(--accent)',fontWeight:600,marginBottom:'6px'}}>⚠ Google didn't allow {missingPurposes(a).join(' and ')} — {missingPurposes(a).join(' and ')} won't sync until you reconnect and tick every box.</div>
+                        <button className="btn btn-sm" style={{background:'var(--accent)',color:'#1a1205',fontWeight:600,minHeight:'40px'}} disabled={connecting}
+                          onClick={()=>{ const ps = reconnectPurposes(a); startConnect(legacyPurpose(ps), a.email_address, ps); }}
+                          title={`Reconnect ${a.email_address} — asks Google for: ${reconnectPurposes(a).join(', ')}`}>
+                          {connecting ? 'Opening Google…' : 'Reconnect Google'}
                         </button>
                       </div>
                     ) : a.last_sync_error && (

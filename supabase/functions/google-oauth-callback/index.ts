@@ -115,11 +115,14 @@ serve(async (req) => {
       .eq("email_address", profile.email)
       .maybeSingle();
 
-    // Merge purposes: union of existing + newly granted
-    const mergedPurposes = Array.from(new Set([
-      ...((existing && existing.purposes) || []),
-      ...grantedPurposes,
-    ]));
+    // Purposes = what Google actually granted (9 Oct 2026). The start asks with
+    // include_granted_scopes=true, so tokens.scope is the account's whole grant.
+    // The old union kept "email, calendar" after a contacts-only reconnect, so
+    // sync kept trying a token that couldn't reach them. If Google returned no
+    // scope string at all, keep the old purposes rather than guess.
+    const mergedPurposes = (tokens.scope && String(tokens.scope).trim())
+      ? grantedPurposes
+      : Array.from(new Set([...((existing && existing.purposes) || []), ...grantedPurposes]));
 
     const payload = {
       user_id: userId,

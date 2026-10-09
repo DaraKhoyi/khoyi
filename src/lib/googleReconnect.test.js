@@ -52,3 +52,19 @@ describe('launchTarget — settings deep link', () => {
     expect(launchTarget('?view=finance&sub=ledger')).toEqual({ view: 'finance', sub: 'ledger', tab: null });
   });
 });
+
+import { missingPurposes } from './googleReconnect';
+describe('missingPurposes', () => {
+  it('flags email + calendar when only contacts was granted (Alex, 9 Oct)', () => {
+    const a = { purposes: ['email', 'calendar', 'contacts'], scopes: [G + 'contacts.readonly', 'openid'] };
+    expect(missingPurposes(a)).toEqual(['email', 'calendar']);
+    expect(reconnectPurposes(a)).toEqual(['email', 'calendar', 'contacts']);
+  });
+  it('nothing missing when the grant covers every purpose', () => {
+    expect(missingPurposes({ purposes: ['email', 'calendar'], scopes: [G + 'gmail.modify', G + 'calendar.events'] })).toEqual([]);
+  });
+  it('never flags a row with no recorded scopes or an inactive row', () => {
+    expect(missingPurposes({ purposes: ['email'], scopes: [] })).toEqual([]);
+    expect(missingPurposes({ purposes: ['email'], scopes: ['openid'], is_active: false })).toEqual([]);
+  });
+});
