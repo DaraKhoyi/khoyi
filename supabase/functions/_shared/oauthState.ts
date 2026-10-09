@@ -8,7 +8,7 @@
 // said (an open redirect on our own Supabase domain). Nothing was checked.
 //
 // Now the state is `v1.<payload>.<signature>`:
-//   payload   = base64url(JSON { uid, rt, p, n, exp })
+//   payload   = base64url(JSON { uid, rt, p, ru?, n, exp })
 //   signature = base64url(HMAC-SHA256(key, "v1." + payload))
 // The start function issues it ONLY for the user in the caller's JWT, the
 // callback rejects anything unsigned, tampered with, or older than STATE_TTL_MS,
@@ -81,7 +81,33 @@ async function signingKey(): Promise<CryptoKey> {
   return cachedKey;
 }
 
-export type OAuthState = { uid: string; rt: string; purposes: string[] };
+// THE REDIRECT URI TRAVELS IN THE SIGNED STATE (8 Oct 2026, Google verification).
+// Google requires the token exchange to send the exact redirect_uri the consent
+// URL used. The consent URL is moving from the Supabase callback to the relay
+// page on darasapp.com (public/oauth/google/callback.html), which Google can
+// verify as ours. Carrying the URI inside the signed state means a flow started
+// before the switch still finishes after it, and the callback never has to
+// guess. Only URIs on this list are honoured; anything else falls back to the
+// GOOGLE_REDIRECT_URI secret.
+export const RELAY_REDIRECT_URI = "https://darasapp.com/oauth/google/callback";
+export function allowedRedirectUris(): Set<string> {
+  const out = new Set<string>([RELAY_REDIRECT_URI]);
+  for (const k of ["GOOGLE_REDIRECT_URI", "GOOGLE_RELAY_REDIRECT_URI"]) {
+    const v = (Deno.env.get(k) || "").trim();
+    if (v) out.add(v);
+  }
+  return out;
+}
+/** The redirect_uri a NEW consent URL should use: the darasapp.com relay once
+ *  GOOGLE_RELAY_REDIRECT_URI is set, otherwise the existing GOOGLE_REDIRECT_URI. */
+export function currentRedirectUri(): string | null {
+  const relay = (Deno.env.get("GOOGLE_RELAY_REDIRECT_URI") || "").trim();
+  if (relay) return relay;
+  const legacy = (Deno.env.get("GOOGLE_REDIRECT_URI") || "").trim();
+  return legacy || null;
+}
+
+export type OAuthState = { uid: string; rt: string; purposes: string[]; ru?: string };
 
 /** Issue a signed state for an AUTHENTICATED user id (from their JWT, never the body). */
 export async function signState(s: OAuthState, now = Date.now()): Promise<string> {
@@ -91,6 +117,7 @@ export async function signState(s: OAuthState, now = Date.now()): Promise<string
     uid: s.uid,
     rt: safeReturnTo(s.rt),
     p: s.purposes,
+    ...(s.ru ? { ru: s.ru } : {}),
     n: b64urlFromBytes(nonce),
     exp: now + STATE_TTL_MS,
   };
@@ -121,6 +148,7 @@ export async function verifyState(state: string, now = Date.now()): Promise<OAut
     uid: body.uid,
     rt: safeReturnTo(body.rt),
     purposes: Array.isArray(body.p) ? body.p.filter((x: unknown) => typeof x === "string") : [],
+    ru: typeof body.ru === "string" && allowedRedirectUris().has(body.ru) ? body.ru : undefined,
   };
 }
 

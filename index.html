@@ -5,7 +5,9 @@
     <script>/* Restore a deep-link path handed over by 404.html so the SPA router can read it */(function(){try{var m=location.search.match(/[?&]__spa=([^&]*)/);if(m){var t=decodeURIComponent(m[1]);if(t&&t.charAt(0)==='/')history.replaceState(null,'',t);}}catch(e){}})();</script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0a0b0d" />
-    <meta name="description" content="PrismOS — Dara's personal operating system" />
+    <meta name="description" content="PrismOS is the private CRM and productivity workspace for the agents, team leaders and staff of Realty ONE Group Advantage: email, calendar, contacts, calls and texts in one place, next to the right client, lead or transaction." />
+    <!-- Signed in already, or on a deep link? Hide the public home before first paint (see #prism-home). -->
+    <script>(function(){try{var d=document.documentElement,p=location.pathname,s=false;for(var i=0;i<localStorage.length;i++){if(/^sb-.+-auth-token$/.test(localStorage.key(i)||'')){s=true;break;}}if(s||(p!=='/'&&p!=='/index.html'))d.className+=(d.className?' ':'')+'ph-hide';}catch(e){}})();</script>
     <link rel="manifest" href="/manifest.json" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -17,10 +19,171 @@
     <title>PrismOS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <style id="prism-home-css">
+      /* Public home. Luxury Gold: black, cream, gold #C5A95E; Playfair Display + Montserrat. */
+      html.ph-hide #prism-home { display: none !important; }
+      html:not(.ph-hide) #root > .loading-screen { display: none; }
+      #prism-home { --ph-ink:#0B0A08; --ph-ink2:#15120D; --ph-cream:#FAF7F0; --ph-paper:#FFFDF8; --ph-gold:#C5A95E; --ph-gold-d:#8C7535; --ph-mute:#B9B0A0; --ph-rule:#2A251C;
+        background: var(--ph-ink); color: var(--ph-cream); font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 16px; line-height: 1.65; }
+      #prism-home * { box-sizing: border-box; }
+      #prism-home a { color: inherit; }
+      .ph-wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+      .ph-narrow { max-width: 880px; }
+      .ph-top { border-bottom: 1px solid var(--ph-rule); position: sticky; top: 0; z-index: 5; background: rgba(11,10,8,.94); backdrop-filter: blur(6px); }
+      .ph-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 18px; padding-bottom: 18px; }
+      .ph-brand { font-family: "Playfair Display", Georgia, serif; font-weight: 600; font-size: 26px; letter-spacing: .02em; color: var(--ph-gold) !important; text-decoration: none; }
+      .ph-nav { display: flex; align-items: center; gap: 22px; }
+      .ph-nav a { text-decoration: none; font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ph-cream); opacity: .85; }
+      .ph-nav a:hover { opacity: 1; color: var(--ph-gold); }
+      .ph-nav .ph-nav-cta { border: 1px solid var(--ph-gold); color: var(--ph-gold); opacity: 1; padding: 8px 14px; border-radius: 999px; }
+      .ph-hero { padding: 72px 0 84px; background: radial-gradient(1200px 500px at 15% -10%, rgba(197,169,94,.16), transparent 60%), var(--ph-ink); }
+      .ph-hero-grid { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(0,.9fr); gap: 56px; align-items: center; }
+      .ph-eyebrow { margin: 0 0 18px; font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--ph-gold); }
+      .ph-h1 { margin: 0 0 22px; font-family: "Playfair Display", Georgia, serif; font-weight: 600; font-size: 60px; line-height: 1.06; letter-spacing: -.01em; color: var(--ph-cream); }
+      .ph-h1 em { font-style: italic; font-weight: 500; color: var(--ph-gold); }
+      .ph-lede { margin: 0 0 30px; font-size: 17.5px; line-height: 1.75; color: #E9E1D0; max-width: 620px; }
+      .ph-ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+      .ph-btn { display: inline-block; text-decoration: none; font-weight: 600; font-size: 14px; letter-spacing: .04em; padding: 13px 22px; border-radius: 999px; }
+      .ph-btn-gold { background: var(--ph-gold); color: #111 !important; }
+      .ph-btn-line { border: 1px solid rgba(197,169,94,.6); color: var(--ph-gold) !important; }
+      .ph-signin { scroll-margin-top: 90px; }
+      .ph-signin-fallback, .ph-signin .auth-card { background: var(--ph-ink2); border: 1px solid #3A3224; border-top: 3px solid var(--ph-gold); border-radius: 16px; padding: 30px 28px; max-width: 420px; width: 100%; margin-left: auto; }
+      .ph-card-title { margin: 0 0 8px; font-family: "Playfair Display", Georgia, serif; font-size: 24px; color: var(--ph-cream); }
+      .ph-card-text { margin: 0; font-size: 14px; color: var(--ph-mute); }
+      .ph-signin .auth-card h2 { font-family: "Playfair Display", Georgia, serif; font-weight: 600; font-size: 24px; color: var(--ph-cream); }
+      .ph-signin .auth-card > p { color: var(--ph-mute); }
+      .ph-cream { background: var(--ph-cream); color: #1B1813; padding: 80px 0; }
+      .ph-kicker { margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--ph-gold-d); }
+      .ph-kicker-gold { color: var(--ph-gold); }
+      .ph-h2 { margin: 0 0 34px; font-family: "Playfair Display", Georgia, serif; font-weight: 600; font-size: 38px; line-height: 1.2; color: #141210; }
+      .ph-h2-light { color: var(--ph-cream); }
+      .ph-cards { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 18px; }
+      .ph-card { background: var(--ph-paper); border: 1px solid #E6DDC8; border-top: 3px solid var(--ph-gold); border-radius: 10px; padding: 24px 22px; }
+      .ph-card h3 { margin: 0 0 10px; font-family: "Playfair Display", Georgia, serif; font-size: 20px; font-weight: 600; color: #141210; }
+      .ph-card p { margin: 0; font-size: 14.5px; color: #4A443A; line-height: 1.65; }
+      .ph-dark { padding: 84px 0; background: var(--ph-ink); scroll-margin-top: 70px; }
+      .ph-scopes { margin: 0 0 30px; border-top: 1px solid var(--ph-rule); }
+      .ph-scopes > div { display: grid; grid-template-columns: 230px 1fr; gap: 22px; padding: 18px 0; border-bottom: 1px solid var(--ph-rule); }
+      .ph-scopes dt { margin: 0; font-family: "Playfair Display", Georgia, serif; font-size: 19px; color: var(--ph-gold); }
+      .ph-scopes dd { margin: 0; color: #E9E1D0; font-size: 15.5px; }
+      .ph-promises { margin: 0 0 22px; padding: 0; list-style: none; }
+      .ph-promises li { position: relative; margin: 0 0 12px; padding-left: 26px; color: #E9E1D0; font-size: 15.5px; }
+      .ph-promises li::before { content: ""; position: absolute; left: 0; top: .72em; width: 12px; height: 2px; background: var(--ph-gold); }
+      .ph-promises a, .ph-more a, .ph-foot a { color: var(--ph-gold); text-underline-offset: 3px; }
+      .ph-more { margin: 0; color: var(--ph-mute); font-size: 15px; }
+      .ph-foot { border-top: 3px solid var(--ph-gold); background: #080706; color: var(--ph-mute); padding: 36px 0 44px; font-size: 13.5px; text-align: center; }
+      .ph-foot p { margin: 4px 0; }
+      .ph-foot-brand { font-family: "Playfair Display", Georgia, serif; color: var(--ph-gold); font-size: 20px; }
+      @media (max-width: 960px) {
+        .ph-hero-grid { grid-template-columns: 1fr; gap: 36px; }
+        .ph-signin-fallback, .ph-signin .auth-card { margin-left: 0; max-width: none; }
+        .ph-cards { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      }
+      @media (max-width: 600px) {
+        .ph-wrap { padding: 0 18px; }
+        .ph-nav { gap: 14px; }
+        .ph-nav a { font-size: 11px; letter-spacing: .1em; }
+        .ph-nav a[href="#google-data"] { display: none; }
+        .ph-nav .ph-nav-cta { padding: 7px 12px; }
+        .ph-hero { padding: 40px 0 52px; }
+        .ph-h1 { font-size: 40px; }
+        .ph-lede { font-size: 16px; }
+        .ph-h2 { font-size: 29px; }
+        .ph-cards { grid-template-columns: 1fr; }
+        .ph-scopes > div { grid-template-columns: 1fr; gap: 6px; }
+        .ph-cream, .ph-dark { padding: 56px 0; }
+      }
+    </style>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!--
+      PUBLIC HOME (8 Oct 2026, Google OAuth verification). Google requires the
+      homepage to describe the app, not only show a login form, and to be
+      readable as plain HTML. This block is the whole public page: it is real
+      HTML (no JavaScript needed to read it), and the React app only drops the
+      sign-in card into #prism-signin (src/views/PublicHome.jsx). Signed-in
+      visitors never see it: the head script adds .ph-hide before first paint.
+      Keep the Google-data wording in step with public/privacy/index.html.
+    -->
+    <div id="prism-home">
+      <header class="ph-top">
+        <div class="ph-wrap ph-bar">
+          <a class="ph-brand" href="/">PrismOS</a>
+          <nav class="ph-nav" aria-label="Site">
+            <a href="#google-data">Google data</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+            <a class="ph-nav-cta" href="#sign-in">Sign in</a>
+          </nav>
+        </div>
+      </header>
+
+      <section class="ph-hero">
+        <div class="ph-wrap ph-hero-grid">
+          <div class="ph-hero-copy">
+            <p class="ph-eyebrow">For the agents, team leaders and staff of Realty ONE Group Advantage</p>
+            <h1 class="ph-h1">Your whole business, <em>in one place.</em></h1>
+            <p class="ph-lede">PrismOS is the private CRM and productivity workspace for the agents, team leaders and staff of Realty ONE Group Advantage. It brings each agent&rsquo;s email, calendar, contacts, calls and texts into one place, next to the right client, lead or transaction, and helps them follow up with AI summaries and drafts they approve.</p>
+            <div class="ph-ctas">
+              <a class="ph-btn ph-btn-gold" href="#sign-in">Sign in</a>
+              <a class="ph-btn ph-btn-line" href="#google-data">How PrismOS uses Google data</a>
+            </div>
+          </div>
+          <div class="ph-signin" id="sign-in">
+            <div id="prism-signin">
+              <div class="ph-signin-fallback">
+                <p class="ph-card-title">Sign in to PrismOS</p>
+                <p class="ph-card-text">Accounts are created by the brokerage for its agents, team leaders and staff. Sign-in needs JavaScript turned on in your browser.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ph-cream">
+        <div class="ph-wrap">
+          <p class="ph-kicker">What PrismOS does</p>
+          <h2 class="ph-h2">Built for a working real estate agent&rsquo;s day.</h2>
+          <div class="ph-cards">
+            <article class="ph-card"><h3>Inbox that knows your clients</h3><p>Your email sits next to the client, lead or deal it is about. New enquiries are spotted and brought to you, and replies you approve go out from your own address.</p></article>
+            <article class="ph-card"><h3>Calendar and bookings</h3><p>Appointments and showings stay in step with your calendar in both directions, and clients can book a time with you from your own booking link.</p></article>
+            <article class="ph-card"><h3>Contacts and pipeline</h3><p>Every person&rsquo;s emails, calls, texts, notes and transactions in one record, with reminders so nobody you care about slips through.</p></article>
+            <article class="ph-card"><h3>AI that waits for your yes</h3><p>Summaries, follow-up drafts and a daily plan. Nothing is sent unless you send it, approve it or schedule it yourself.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="ph-dark" id="google-data">
+        <div class="ph-wrap ph-narrow">
+          <p class="ph-kicker ph-kicker-gold">Your Google data, in plain words</p>
+          <h2 class="ph-h2 ph-h2-light">Connecting Google is optional. Here is exactly what it does.</h2>
+          <dl class="ph-scopes">
+            <div><dt>Gmail</dt><dd>PrismOS reads your mail so each message appears next to the right client or lead, and sends, archives, labels, snoozes or moves mail to trash only when you do.</dd></div>
+            <div><dt>Google Calendar events</dt><dd>PrismOS shows your events and keeps appointments, showings and booking-link meetings in two-way sync with your calendar.</dd></div>
+            <div><dt>Google Contacts, read-only</dt><dd>PrismOS imports your saved contacts so calls, texts and email match the right person. It never changes anything in Google Contacts.</dd></div>
+            <div><dt>Basic profile</dt><dd>Your Google name and email address, so PrismOS can show which account is connected.</dd></div>
+          </dl>
+          <ul class="ph-promises">
+            <li>Your Google data is shown only to you. Your broker, team leaders and teammates cannot read your mail, including during support sessions.</li>
+            <li>It is never sold, never used for advertising and never used to train AI models.</li>
+            <li>You can disconnect at any time in Settings, and remove PrismOS&rsquo;s access from your Google Account.</li>
+            <li>PrismOS&rsquo;s use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</li>
+          </ul>
+          <p class="ph-more">Full details are in our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Service</a>.</p>
+        </div>
+      </section>
+
+      <footer class="ph-foot">
+        <div class="ph-wrap">
+          <p class="ph-foot-brand">PrismOS</p>
+          <p>Operated by Teamkar Realty, Inc. d/b/a Realty ONE Group Advantage, Lutz, Florida.</p>
+          <p><a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms of Service</a> &middot; <a href="mailto:dara@brokerdara.com">dara@brokerdara.com</a></p>
+        </div>
+      </footer>
+    </div>
+    <noscript><p style="text-align:center;padding:12px;font-family:system-ui,sans-serif">Signing in to PrismOS needs JavaScript.</p></noscript>
     <div id="root"></div>
     <script type="module" src="/src/index.js"></script>
     <script>

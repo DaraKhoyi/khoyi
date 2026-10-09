@@ -15,6 +15,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -394,6 +395,8 @@ serve(async (req) => {
       if (!user) throw new Error("Unauthorized");
       user_id = user.id;
     }
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(supabase, req.headers.get("Authorization"))) return supportSessionResponse(corsHeaders);
 
     // Load contact
     const { data: contact, error: cErr } = await supabase.from("contacts")

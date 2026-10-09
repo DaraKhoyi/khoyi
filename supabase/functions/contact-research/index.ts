@@ -17,6 +17,7 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { refreshTransact } from "../_shared/transactFacts.ts";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -306,6 +307,8 @@ serve(async (req) => {
       user = r.data?.user || null;
       if (!user) return J({ error: "Unauthorized" }, 401);
     }
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(supabase, req.headers.get("Authorization"))) return supportSessionResponse(corsHeaders);
 
     const { data: contact, error: cErr } = await supabase.from("contacts").select("*").eq("id", contact_id).single();
     if (cErr || !contact) return J({ error: "Contact not found" }, 404);

@@ -123,6 +123,7 @@ import { logJournalEntry } from './lib/journalLog';
 import { BUILD_VERSION } from './version';
 import './index.css';
 import { computeCDA } from './lib/cda';
+import SignInGate from './views/PublicHome';
 
 // Lazy-load wrapper: if a view's code chunk fails to load, retry once, then show
 // a "could not load" card with a Refresh button. It never reloads by itself.
@@ -368,7 +369,7 @@ If a real person who knows the user wouldn't recognize the draft as theirs, rewr
 
 // Contact segment types. Order = display order in dropdowns and filter pills.
 // "All" is a UI-only filter sentinel; it isn't stored.
-function AuthScreen() {
+function AuthScreen({ embedded = false }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -394,13 +395,13 @@ function AuthScreen() {
   const switchMode = (m) => { setMode(m); setError(''); setSuccess(''); };
 
   return (
-    <div className="auth-screen">
+    <div className={embedded ? 'auth-embedded' : 'auth-screen'}>
       <div className="auth-card">
-        <div className="auth-logo">
+        {!embedded && <div className="auth-logo">
           <RogLogo />
-        </div>
+        </div>}
         {mode === 'login' && <>
-          <h2>Welcome back</h2>
+          <h2>{embedded ? 'Sign in to PrismOS' : 'Welcome back'}</h2>
           <p>Sign in to your workspace</p>
           {error && <div className="auth-error">{error}</div>}
           {success && <div className="auth-success">{success}</div>}
@@ -1596,7 +1597,7 @@ function AppMain() {
   }, [uidForReview, view]);
 
   if (loading) return <div className="loading-screen"><div className="spinner"/><p>Loading…</p></div>;
-  if (!session) return <AuthScreen />;
+  if (!session) return <SignInGate render={(embedded) => <AuthScreen embedded={embedded} />} />;
 
   const user = session.user;
   // Admin comes from agents.role via app-whoami, never from an email address.
