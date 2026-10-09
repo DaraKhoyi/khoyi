@@ -232,31 +232,33 @@ serve(async (req) => {
       user_id = user.id;
     }
 
-    // Load the account designated for CALENDAR. Prefer purposes @> {calendar},
-    // fall back to any active google account with a calendar scope.
-    let { data: account, error: accErr } = await supabase
+    // Load the account that can actually reach CALENDAR. 9 Oct 2026: purposes
+    // can say "calendar" while Google's grant no longer includes it (a later
+    // contacts-only reconnect replaced the token and scopes but the callback
+    // unions purposes). Choosing by purpose sent that token to the Calendar API
+    // ~30 times an hour (403 -> 500). Granted scope is the truth; purpose only
+    // breaks ties.
+    const hasCalScope = (a: any) => (a.scopes || []).some((s: string) => s.includes("/auth/calendar"));
+    const { data: candidates, error: accErr } = await supabase
       .from("email_accounts")
       .select("*")
       .eq("user_id", user_id)
       .eq("provider", "google")
       .eq("is_active", true)
-      .contains("purposes", ["calendar"])
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order("updated_at", { ascending: false });
     if (accErr) throw accErr;
+    const scoped = (candidates || []).filter(hasCalScope);
+    const account = scoped.find((a: any) => (a.purposes || []).includes("calendar")) || scoped[0] || null;
     if (!account) {
-      // Fallback: any active google account whose scopes include calendar
-      const { data: candidates } = await supabase
-        .from("email_accounts")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("provider", "google")
-        .eq("is_active", true)
-        .order("updated_at", { ascending: false });
-      account = (candidates || []).find(a => (a.scopes || []).some((s) => s.includes("calendar"))) || null;
+      // Not a server fault: nothing this user connected grants calendar. Say so
+      // plainly (200, skipped) so calendar-poll and the alarm don't count it.
+      const labelled = (candidates || []).filter((a: any) => (a.purposes || []).includes("calendar")).map((a: any) => a.email_address);
+      return new Response(JSON.stringify({
+        ok: true, skipped: true, reason: "needs_calendar_scope",
+        message: "Reconnect Google with Calendar allowed to sync your calendar.",
+        accounts_missing_scope: labelled,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    if (!account) throw new Error("No Google account connected for calendar");
     if (!account.refresh_token) throw new Error("No refresh token; please reconnect the calendar account");
 
     // Ensure access token is fresh
