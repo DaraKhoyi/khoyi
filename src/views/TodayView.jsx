@@ -49,8 +49,6 @@ export default function TodayView({
   agentName = '', onOpenPlan,
 }) {
   const [more, setMore] = useState(false);
-  const [threeState, setThreeState] = useState('off');   // 'off' | 'cards' | 'clear' — from TodayThree
-  const [queueOpen, setQueueOpen] = useState(false);
   const notifyTasks = () => { try { window.dispatchEvent(new Event('prism:tasks-changed')); } catch (_) {} };
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -106,11 +104,6 @@ export default function TodayView({
         </button>
       )}
 
-      {/* 0 — THREE THINGS, one tap each (9 Oct 2026, Dara: compressed CRM plan).
-          Promises due within 48 hours lead, then a Company Lead waiting, then a
-          missed caller. Hidden until public.today_three() exists. In-app only. */}
-      {!isFirstRun && <TodayThree userId={myUserId} setView={setView} onState={setThreeState} />}
-
       {isFirstRun && (
         <div style={{ marginTop: 22 }}>
           <div style={calm.section}>Three things to start</div>
@@ -133,6 +126,12 @@ export default function TodayView({
           then the goals you chose for today. */}
       {!isFirstRun && <GoalsBand userId={myUserId} tasks={tasks} setTasks={setTasks} events={events} setView={setView} firstName={first} />}
 
+      {/* 1c — THREE THINGS, one tap each (9 Oct 2026, Dara: compressed CRM plan).
+          After the person's own goals (the agenda comes before anything inbound),
+          before the rest of the day. Promises due within 48 hours lead, then a
+          Company Lead waiting, then a missed caller. In-app only. */}
+      {!isFirstRun && <TodayThree userId={myUserId} setView={setView} />}
+
       {/* 2 — What PrismOS did */}
       <HandledLine setView={setView} />
 
@@ -141,13 +140,8 @@ export default function TodayView({
         <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
       </div>
       <DelegationInbox userId={myUserId} onChanged={notifyTasks} />
-      {/* With the three cards showing, the rest of the queue waits one tap down so
-          Today still reads as three things (9 Oct). Without them, as before. */}
-      {!isFirstRun && threeState === 'cards' && !queueOpen && (
-        <button type="button" data-testid="today-more-queue" style={{ ...calm.link, display: 'block', marginTop: 10 }} onClick={() => setQueueOpen(true)}>More that needs you today</button>
-      )}
-      {!isFirstRun && (threeState !== 'cards' || queueOpen) && <div style={calm.section}>{threeState === 'cards' ? 'Also today' : 'Needs you today'}</div>}
-      {!isFirstRun && (threeState !== 'cards' || queueOpen) && <ChiefQueue userId={myUserId} setView={setView} limit={3} oneAtATime={present.today_items === 1} onChanged={notifyTasks} />}
+      {!isFirstRun && <div style={calm.section}>Needs you today</div>}
+      {!isFirstRun && <ChiefQueue userId={myUserId} setView={setView} limit={3} oneAtATime={present.today_items === 1} onChanged={notifyTasks} />}
       {/* The day-before question, in the app itself (4 Oct): the push reaches only people
           with a device registered — 5 of 17 accounts. Shown only on the day it applies. */}
       {!isFirstRun && <div style={{ marginTop: 18 }}><SetAsideTomorrow userId={myUserId} /></div>}
