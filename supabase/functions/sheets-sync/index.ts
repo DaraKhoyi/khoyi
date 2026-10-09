@@ -15,6 +15,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -150,6 +151,8 @@ function isExclude(v: any): boolean {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // pg_cron (service), or the owner / a broker admin pressing "Refresh" in Accounting (_shared/guard.ts).
+  { const g = await requireServiceOr(req, cors, { staff: true }); if (g.res) return g.res; }
   try {
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const body = await req.json().catch(() => ({}));

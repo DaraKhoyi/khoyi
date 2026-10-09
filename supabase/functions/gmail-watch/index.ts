@@ -3,6 +3,7 @@
 // expire <=7 days, so a cron re-runs this daily. Stores watch_expires_at.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireService } from "../_shared/guard.ts";
 
 async function freshAccessToken(account) {
   const now = Date.now();
@@ -24,6 +25,7 @@ async function freshAccessToken(account) {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok");
+  { const denied = await requireService(req, {}); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json" } });
   try {
     const topic = Deno.env.get("GMAIL_PUBSUB_TOPIC");

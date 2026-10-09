@@ -2,6 +2,7 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { requireService } from "../_shared/guard.ts";
 
 // ── call-enrich ──────────────────────────────────────────────────────────────
 // A call arrives from Cube ACR as a wall of "Speaker A: / Speaker B:" and gets
@@ -75,6 +76,7 @@ async function claude(key: string, system: string, user: string) {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const denied = await requireService(req, cors); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   const J = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 

@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notAThingLessons, personalRule, broughtBackLessons, putOffLessons } from "../_shared/lessons.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 import { dialLevel } from "../_shared/dial.ts";
+import { requireService } from "../_shared/guard.ts";
 
 // ── call-commitments ─────────────────────────────────────────────────────────
 // Pulls the promises out of a call. The whole design answers one question Dara
@@ -85,6 +86,7 @@ function hasExtraSpeakers(transcript: unknown, map: Record<string, string> | nul
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const denied = await requireService(req, cors); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   const J = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 

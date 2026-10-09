@@ -85,6 +85,12 @@ if [ "$LANE" = full ]; then node smoke/definer_guard.mjs; else SUPABASE_PAT= nod
 # Static half in both lanes; the live half (anon-key probes only) in full. BLOCKS.
 guard access_batch1 static
 
+# Security batch 2 (8 Oct 2026): the cron / worker edge functions run only for
+# the service role (_shared/guard.ts), internal database functions are closed to
+# signed-out callers, and the gated readers stay gated. Static half in both
+# lanes; the live half (anon-key probes, read-only) in full. BLOCKS.
+guard access_batch2 static
+
 # Every deployed edge function has source here, and config.toml's verify_jwt
 # matches live — or the next deploy flips it and locks out a cron caller. BLOCKS.
 if [ "$LANE" = full ] && [ -n "${SUPABASE_PAT:-}" ]; then node smoke/function_config.mjs; fi
