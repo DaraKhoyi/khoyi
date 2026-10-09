@@ -8,6 +8,7 @@
 // verify_jwt=false (cron-called). Body: { limit?: number }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireService } from "../_shared/guard.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type" };
 const TRUST = ["335", "336", "337", "344", "345", "346"];
@@ -18,6 +19,7 @@ function cleanAddr(a: string): string {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const denied = await requireService(req, cors); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   try {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { limit } = await req.json().catch(() => ({ limit: 40 }));

@@ -7,6 +7,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireService } from "../_shared/guard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -20,6 +21,7 @@ async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  { const denied = await requireService(req, corsHeaders); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   try {
     const body = await req.json().catch(() => ({}));
     const userId: string | undefined = body.user_id;

@@ -96,6 +96,8 @@ function mapPerson(p: any, userId: string, accountId: string) {
   };
 }
 
+import { requireServiceOr } from "../_shared/guard.ts";
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const json = (b: unknown, s = 200) =>
@@ -104,6 +106,8 @@ serve(async (req) => {
   try {
     const { user_id, account_id, full } = await req.json();
     if (!user_id) return json({ ok: false, error: "user_id required" }, 400);
+    // A signed-in user syncs only their own contacts; the cron sweep (service) names the user (_shared/guard.ts).
+    { const g = await requireServiceOr(req, corsHeaders, { bodyUserId: user_id }); if (g.res) return g.res; }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,

@@ -16,6 +16,7 @@
 // rejects when verify_jwt=true.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireService } from "../_shared/guard.ts";
 
 const MAX_PER_RUN = 25;      // cost ceiling per invocation
 const MIN_DAYS_SINCE_RUN = 6;
@@ -25,6 +26,7 @@ const j = (o: unknown, status = 200) =>
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: { "Access-Control-Allow-Origin": "*" } });
+  { const denied = await requireService(req, { "Access-Control-Allow-Origin": "*" }); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 

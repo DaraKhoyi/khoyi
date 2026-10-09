@@ -3,6 +3,7 @@
 // double-sends. Uses the agent's Gmail. (Google already reminds the agent.)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireService } from "../_shared/guard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -42,6 +43,7 @@ async function sendReminder(bk: any, whenText: string, tz: string) {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  { const denied = await requireService(req, cors); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   try {
     const now = Date.now();
     const in24 = new Date(now + 24 * 3600000).toISOString();

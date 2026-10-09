@@ -5,6 +5,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireService } from "../_shared/guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,7 +28,8 @@ async function refreshAccessToken(account) {
   return tokens.access_token;
 }
 
-serve(async (_req) => {
+serve(async (req) => {
+  { const denied = await requireService(req, {}); if (denied) return denied; }   // pg_cron / service only (_shared/guard.ts)
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL"),

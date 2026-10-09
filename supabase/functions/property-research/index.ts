@@ -12,10 +12,10 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
 
@@ -82,13 +82,11 @@ Deno.serve(async (req) => {
     if (!address) return J({ error: "address is required" }, 400);
     const hint = (body?.subject_hint || "").toString().slice(0, 600);
 
-    // Identify the billing user: a real JWT if present, else body.user_id (service call).
-    let billUserId: string | null = body?.user_id || null;
-    const authHeader = req.headers.get("Authorization") || "";
-    const tokenStr = authHeader.replace("Bearer ", "");
-    if (tokenStr && tokenStr !== SERVICE && tokenStr !== ANON) {
-      try { const { data } = await admin.auth.getUser(tokenStr); if (data?.user) billUserId = data.user.id; } catch (_) {}
-    }
+    // Identify the billing user: the signed-in caller, or body.user_id ONLY for a
+    // service call. Anyone else is refused before any AI is spent (_shared/guard.ts).
+    const g = await requireServiceOr(req, corsHeaders, { bodyUserId: body?.user_id || null });
+    if (g.res) return g.res;
+    const billUserId: string | null = g.userId;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 230000);

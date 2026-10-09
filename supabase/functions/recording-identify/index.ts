@@ -2,6 +2,7 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 // ── recording-identify ───────────────────────────────────────────────────────
 // Answers "who was in this recording?" for a face-to-face meeting that carries no
@@ -61,6 +62,8 @@ serve(async (req) => {
     const KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const { recording_id, user_id } = await req.json();
     if (!recording_id || !user_id) return J({ error: "need recording_id, user_id" }, 400);
+    // Only the recording's owner (or the service role) may ask (_shared/guard.ts).
+    { const g = await requireServiceOr(req, cors, { bodyUserId: user_id }); if (g.res) return g.res; }
 
     const { data: rec } = await db.from("recordings").select("*").eq("id", recording_id).eq("user_id", user_id).maybeSingle();
     if (!rec) return J({ error: "no such recording" }, 404);
