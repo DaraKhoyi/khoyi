@@ -12,7 +12,7 @@
 //     activates it on demand. This guarantees deploys are picked up promptly
 //     (even on a resumed/backgrounded PWA) without yanking the bundle mid-task.
 
-const VERSION = 'prismos-2dd72bbe'
+const VERSION = 'prismos-b8c07e5e'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -117,7 +117,9 @@ self.addEventListener('fetch', (event) => {
   // Public legal pages (/privacy, /terms) are plain static HTML that Google's
   // OAuth reviewer and the public read directly. Never intercept them, so a
   // browser with this worker installed can never get the app shell instead.
-  if (/^\/(privacy|terms)(\/.*|\.html)?$/.test(new URL(req.url).pathname)) return;
+  // Same for the Google OAuth redirect relay (8 Oct 2026): it must always be the
+  // real page, never the app shell, or a connection would stall halfway.
+  if (/^\/(privacy|terms|oauth\/google\/callback)(\/.*|\.html)?$/.test(new URL(req.url).pathname)) return;
 
   // Navigations (page loads) — network-first, fall back to cached index.html
   // when offline so the PWA still opens to a usable shell.
