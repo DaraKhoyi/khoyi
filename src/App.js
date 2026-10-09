@@ -382,13 +382,7 @@ function AuthScreen() {
     if (error) setError(error.message);
     setLoading(false);
   }
-  async function handleSignup(e) {
-    e.preventDefault(); setLoading(true); setError('');
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) setError(error.message);
-    else setSuccess('Check your email to confirm your account.');
-    setLoading(false);
-  }
+  // No public sign-up (8 Oct 2026): logins come from Agents -> Create login.
   async function handleReset(e) {
     e.preventDefault(); setLoading(true); setError('');
     const { error } = await supabase.auth.resetPasswordForEmail(email);
@@ -415,19 +409,8 @@ function AuthScreen() {
             <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required /></div>
             <button className="btn btn-primary" style={{width:'100%'}} disabled={loading}>{loading ? 'Signing in…' : 'Sign In'}</button>
           </form>
-          <div className="auth-switch"><button type="button" className="auth-link" onClick={()=>switchMode('reset')}>Forgot password?</button> · <button type="button" className="auth-link" onClick={()=>switchMode('signup')}>Create account</button></div>
-        </>}
-        {mode === 'signup' && <>
-          <h2>Create account</h2>
-          <p>Get started with Prism</p>
-          {error && <div className="auth-error">{error}</div>}
-          {success && <div className="auth-success">{success}</div>}
-          <form onSubmit={handleSignup}>
-            <div className="form-group"><label className="form-label">Email</label><input className="form-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" required /></div>
-            <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required /></div>
-            <button className="btn btn-primary" style={{width:'100%'}} disabled={loading}>{loading ? 'Creating…' : 'Create Account'}</button>
-          </form>
-          <div className="auth-switch">Already have an account? <button type="button" className="auth-link" onClick={()=>switchMode('login')}>Sign in</button></div>
+          <div className="auth-switch"><button type="button" className="auth-link" onClick={()=>switchMode('reset')}>Forgot password?</button></div>
+          <div className="auth-switch" style={{marginTop:'6px'}}>New to PrismOS? Your broker creates your login.</div>
         </>}
         {mode === 'reset' && <>
           <h2>Reset password</h2>
@@ -495,27 +478,46 @@ function ConnectionBanner() {
   );
 }
 
+// The act-as marker, only while it belongs to the signed-in user (a leftover
+// marker after a 30-minute act-as session expired is dropped).
+function readImpersonation(userId) {
+  try {
+    const m = JSON.parse(localStorage.getItem('__impersonating') || 'null');
+    if (m && m.target_id && userId && m.target_id !== userId) { localStorage.removeItem('__impersonating'); return null; }
+    return m;
+  } catch (_) { return null; }
+}
+
 // Persistent banner shown whenever the current session is an impersonated one.
-function ImpersonationBanner() {
-  const [imp] = React.useState(() => { try { return JSON.parse(localStorage.getItem('__impersonating') || 'null'); } catch (_) { return null; } });
+function ImpersonationBanner({ userId }) {
+  const [imp] = React.useState(() => readImpersonation(userId));
   const [leaving, setLeaving] = React.useState(false);
   if (!imp) return null;
+  // Return = the server mints the supervisor a fresh session (8 Oct 2026); their
+  // tokens are never kept in localStorage. Expired (30 min) -> sign in again.
   async function exit() {
     setLeaving(true);
-    let real = null;
-    try { real = JSON.parse(localStorage.getItem('__realSession') || 'null'); } catch (_) {}
+    let back = null;
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem('__realSession') || 'null'); } catch (_) {}
     try {
-      if (real && real.access_token) await supabase.auth.setSession(real);
-      try { await supabase.functions.invoke('impersonate', { body: { action: 'end', log_id: imp.log_id } }); } catch (_) {}
+      if (legacy && legacy.access_token) {
+        // A session started before this change: use it once, then forget it.
+        await supabase.auth.setSession(legacy); back = legacy;
+        try { await supabase.functions.invoke('impersonate', { body: { action: 'end', log_id: imp.log_id } }); } catch (_) {}
+      } else {
+        const { data } = await supabase.functions.invoke('impersonate', { body: { action: 'return', log_id: imp.log_id } });
+        if (data && data.access_token) { await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token }); back = data; }
+      }
     } catch (_) {}
     try { localStorage.removeItem('__impersonating'); localStorage.removeItem('__realSession'); } catch (_) {}
-    if (!real || !real.access_token) { try { await supabase.auth.signOut(); } catch (_) {} }
+    if (!back) { try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {} }
     window.location.reload();
   }
   return (
     <div style={{ background: 'linear-gradient(90deg,#7a1f1f,#a83232)', color: '#fff', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', fontWeight: 600 }}>
       <span style={{ fontSize: '15px' }}>🎭</span>
-      <span style={{ flex: 1, minWidth: 0 }}>You're acting as <b>{imp.name}</b>. Everything you do is recorded as them.</span>
+      <span style={{ flex: 1, minWidth: 0 }}>You're acting as <b>{imp.name}</b>. Everything you do is recorded as them.{imp.expires_at ? <> Ends at {new Date(imp.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</> : null}</span>
       <button onClick={exit} disabled={leaving} style={{ background: '#fff', color: '#7a1f1f', border: 'none', borderRadius: '8px', padding: '5px 12px', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{leaving ? 'Returning…' : 'Return to my account'}</button>
     </div>
   );
@@ -530,12 +532,12 @@ function ActAsPicker({ userId }) {
   async function actAs(c) {
     setBusy(c.user_id); setMsg('');
     try {
-      const { data: { session: real } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('impersonate', { body: { target_user_id: c.user_id } });
       if (error || !data || !data.access_token) { setMsg('Could not switch: ' + (error?.message || data?.error || 'unknown error')); setBusy(''); return; }
+      // Only a marker is kept; the server signed the supervisor's session out.
       try {
-        localStorage.setItem('__realSession', JSON.stringify({ access_token: real.access_token, refresh_token: real.refresh_token }));
-        localStorage.setItem('__impersonating', JSON.stringify({ name: c.name, log_id: data.log_id, at: Date.now() }));
+        localStorage.removeItem('__realSession');
+        localStorage.setItem('__impersonating', JSON.stringify({ name: c.name, log_id: data.log_id, target_id: c.user_id, expires_at: data.expires_at || null, at: Date.now() }));
       } catch (_) {}
       await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
       window.location.reload();
@@ -1604,7 +1606,7 @@ function AppMain() {
   // denied admin in the app purely because they are not Dara.
   const isAdmin = !!(appCtx && appCtx.is_admin);
   const isTeamLeader = appCtx ? !!appCtx.is_team_leader : false;
-  const isImpersonating = (() => { try { return !!localStorage.getItem('__impersonating'); } catch (_) { return false; } })();
+  const isImpersonating = !!readImpersonation(user.id);
   const openTaskCount = tasks.filter(t=>!t.completed).length;
 
   // ── the hub's briefing data: hero + vital signs + per-mode state ──────────
@@ -1779,7 +1781,7 @@ function AppMain() {
       <InstallPwaPrompt />
       <UpdateBanner />
       <JournalReturn userId={user.id} view={view} enabled={userSettings?.journal_button !== false} onOpen={() => navigate('journal')} /><ScopeAsk userId={user.id} />
-      <ImpersonationBanner />
+      <ImpersonationBanner userId={user.id} />
       {/* QuickLog FAB (the graph icon) is preserved but hidden for now — Dara
           asked to remove it from all displays and save it for later. Flip
           SHOW_QUICKLOG_FAB to true to bring it back. */}

@@ -58,14 +58,12 @@ Deno.serve(async (req) => {
       const { data: u } = await admin.auth.getUser(token);
       if (!u?.user) return json({ error: "not authenticated" }, 401);
       const caller = u.user.id;
-      if (body.user_id && body.user_id !== caller) {
-        const { data: staff } = await admin
-          .from("agents").select("role").eq("auth_user_id", caller)
-          .in("role", ["owner", "broker_admin"]).maybeSingle();
-        targetUserId = staff ? body.user_id : caller;
-      } else {
-        targetUserId = caller;
-      }
+      // A signed-in caller can only ever push to their OWN devices (8 Oct 2026,
+      // security batch 1). Staff used to be able to push to anyone, and staff
+      // was a role a user could forge. Alerts to someone else come only from
+      // the service role (cron, triggers, other functions).
+      if (body.user_id && body.user_id !== caller) return json({ error: "you can only send to your own devices" }, 403);
+      targetUserId = caller;
     }
 
     const { data: subs, error: subErr } = await admin

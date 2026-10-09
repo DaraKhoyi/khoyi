@@ -1,0 +1,4 @@
+{
+  "_comment": "Supabase Auth settings applied to the live project by .github/workflows/apply-auth-config.yml (scripts/apply-auth-config.mjs). Only the keys listed here are changed. 8 Oct 2026, security batch 1: public sign-up is OFF. Logins are created by the owner or a brokerage admin (Agents -> Create login -> admin-create-user, service role), and every smoke/CI test user is created with the service-role admin API, which sign-up settings do not affect.",
+  "disable_signup": true
+}
