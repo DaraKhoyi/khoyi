@@ -55,8 +55,9 @@ serve(async (req) => {
   const userIds = [...new Set(
     (accounts || [])
       .filter((a: any) =>
-        (a.purposes || []).includes("calendar") ||
-        (a.scopes || []).some((s: string) => s.includes("calendar"))
+        // Granted scope only (9 Oct 2026): a "calendar" purpose without the
+        // calendar grant cannot sync and only produced 500s.
+        (a.scopes || []).some((s: string) => s.includes("/auth/calendar"))
       )
       // Skip accounts already flagged as needing re-auth — nothing to do until the
       // user reconnects; avoids hammering Google with doomed refreshes every run.
