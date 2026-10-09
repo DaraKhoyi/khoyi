@@ -75,3 +75,36 @@ Deno.test("a state signed with another key is rejected", async () => {
 Deno.test("error text is escaped on the HTML pages", () => {
   assertEquals(escapeHtml('<script>x</script>"'), "&lt;script&gt;x&lt;/script&gt;&quot;");
 });
+
+// The redirect_uri travels in the signed state so the token exchange can repeat
+// it exactly (Google rejects a mismatch). Only our own URIs are honoured.
+Deno.test("redirect uri round-trips when it is one of ours", async () => {
+  const { RELAY_REDIRECT_URI } = await import("./oauthState.ts");
+  const s = await signState({ uid, rt: "https://darasapp.com/", purposes: ["email"], ru: RELAY_REDIRECT_URI });
+  assertEquals((await verifyState(s)).ru, RELAY_REDIRECT_URI);
+});
+
+Deno.test("legacy GOOGLE_REDIRECT_URI is honoured, a foreign one is dropped", async () => {
+  Deno.env.set("GOOGLE_REDIRECT_URI", "https://example-ref.supabase.co/functions/v1/google-oauth-callback");
+  const ok = await signState({ uid, rt: "https://darasapp.com/", purposes: ["email"], ru: "https://example-ref.supabase.co/functions/v1/google-oauth-callback" });
+  assertEquals((await verifyState(ok)).ru, "https://example-ref.supabase.co/functions/v1/google-oauth-callback");
+  const bad = await signState({ uid, rt: "https://darasapp.com/", purposes: ["email"], ru: "https://evil.example/cb" });
+  assertEquals((await verifyState(bad)).ru, undefined);
+  Deno.env.delete("GOOGLE_REDIRECT_URI");
+});
+
+Deno.test("a state with no redirect uri (issued before the change) still verifies", async () => {
+  const s = await signState({ uid, rt: "https://darasapp.com/", purposes: ["email"] });
+  assertEquals((await verifyState(s)).ru, undefined);
+});
+
+Deno.test("currentRedirectUri prefers the relay secret and falls back to the legacy one", async () => {
+  const { currentRedirectUri } = await import("./oauthState.ts");
+  Deno.env.set("GOOGLE_REDIRECT_URI", "https://legacy.example/cb");
+  assertEquals(currentRedirectUri(), "https://legacy.example/cb");
+  Deno.env.set("GOOGLE_RELAY_REDIRECT_URI", "https://darasapp.com/oauth/google/callback");
+  assertEquals(currentRedirectUri(), "https://darasapp.com/oauth/google/callback");
+  Deno.env.delete("GOOGLE_RELAY_REDIRECT_URI");
+  Deno.env.delete("GOOGLE_REDIRECT_URI");
+  assertEquals(currentRedirectUri(), null);
+});

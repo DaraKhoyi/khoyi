@@ -5,6 +5,7 @@
 // Returns: { folders: [{id,name}], parentName? } | { needs_drive: true } | { error }
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +43,8 @@ serve(async (req) => {
     const token = (req.headers.get("Authorization") || "").replace("Bearer ", "");
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return J({ error: "Not authenticated" }, 401);
+    // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
+    if (await isImpersonatedRequest(supabase, req.headers.get("Authorization"))) return supportSessionResponse(corsHeaders);
 
     const { account_id, parent } = await req.json().catch(() => ({}));
     if (!account_id) return J({ error: "account_id required" });

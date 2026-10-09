@@ -7,7 +7,7 @@ import re, sys
 src = open('src/App.js', encoding='utf-8').read()
 lines = src.split('\n')
 
-guard_idx = next((i for i, ln in enumerate(lines) if 'if (!session) return <AuthScreen' in ln), None)
+guard_idx = next((i for i, ln in enumerate(lines) if 'if (!session) return <AuthScreen' in ln or 'if (!session) return <SignInGate' in ln), None)
 if guard_idx is None:
     print('hooks-check: WARN could not locate the App-shell guard; skipping'); sys.exit(0)
 
