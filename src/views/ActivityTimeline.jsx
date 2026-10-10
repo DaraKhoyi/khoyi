@@ -7,6 +7,7 @@ import { decodeEntities } from '../helpers';
 import { notify, confirmDialog } from '../notify';
 import { Icon } from '../icons';
 import FollowupDraftModal from './FollowupDraftModal';
+import { byline, completedByline, editedByline, hasServerAttribution, initialsFromName } from '../lib/activityAttribution';
 const CallDetail = lazy(() => import('./CallDetail'));
 
 // activity-kind config + local-time helpers (used only by this timeline)
@@ -16,7 +17,57 @@ const ACTIVITY_KINDS = {
   meeting: { label: 'Meeting', icon: <Icon name="users" size={13} />, color: '#22c55e', directional: true,  duration: true,  channel: 'in_person', placeholder: 'Meeting recap — who, what was decided, next steps…' },
   text:    { label: 'Text',    icon: <Icon name="message" size={13} />, color: '#38bdf8', directional: true,  duration: false, channel: 'text',      placeholder: 'Summary of the text exchange…' },
   email:   { label: 'Email',   icon: <Icon name="mail" size={13} />, color: '#a78bfa', directional: true,  duration: false, channel: 'email',     placeholder: 'Summary of the email…' },
+  // Shown on history rows only. Not in ACTIVITY_ORDER, so they are not composer buttons.
+  task:    { label: 'Task',    icon: <Icon name="tasks" size={13} />, color: '#C5A95E', directional: false, duration: false, channel: null, placeholder: '' },
+  status:  { label: 'Status', icon: <Icon name="flag" size={13} />, color: '#38bdf8', directional: false, duration: false, channel: null, placeholder: '' },
+  stage:   { label: 'Stage',  icon: <Icon name="flag" size={13} />, color: '#a78bfa', directional: false, duration: false, channel: null, placeholder: '' },
+  field:   { label: 'Edit',   icon: <Icon name="edit" size={13} />, color: '#9499b0', directional: false, duration: false, channel: null, placeholder: '' },
 };
+
+function activityKind(action) {
+  if (String(action || '').startsWith('task_')) return 'task';
+  if (action === 'status_changed') return 'status';
+  if (action === 'stage_changed') return 'stage';
+  if (action === 'field_edited') return 'field';
+  return 'note';
+}
+
+// History rows the timeline draws in addition to the note/call/email cards.
+// Note and call cards already carry their own byline, so those actions are not drawn twice.
+function activityToEntry(a, entityId) {
+  const show = a.action === 'note'
+    ? a.subject_table === 'contact_notes'
+    : ['task_created', 'task_edited', 'task_completed', 'task_reopened', 'status_changed', 'stage_changed', 'field_edited'].includes(a.action);
+  if (!show) return null;
+  return {
+    id: 'act-' + a.id,
+    _activity: true,
+    _action: a.action,
+    kind: activityKind(a.action),
+    body: a.summary,
+    brief: a.summary,
+    occurred_at: a.created_at,
+    created_at: a.created_at,
+    author_id: a.actor_id,
+    author_name: a.actor_name,
+    pinned: false,
+    entity_type: 'contact',
+    entity_id: entityId,
+  };
+}
+
+function ActorMark({ name }) {
+  const initials = initialsFromName(name);
+  return (
+    <span aria-hidden="true" title={name && String(name).trim() ? String(name).trim() : 'author unknown'}
+      style={{ width: 18, height: 18, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 8, fontWeight: 800, flexShrink: 0,
+        background: initials ? 'rgba(197,169,94,.18)' : 'var(--bg-base)',
+        color: 'var(--text-2)', border: '1px solid var(--border)' }}>
+      {initials || '?'}
+    </span>
+  );
+}
 const ACTIVITY_ORDER = ['note', 'call', 'meeting', 'text', 'email'];
 
 function nowLocalInput() {
@@ -172,6 +223,8 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
 
   // Synced Gmail messages, merged read-only into a contact's timeline
   const [emails, setEmails] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [activityTick, setActivityTick] = useState(0);
 
   useEffect(() => {
     if (!entityId) return;
@@ -191,6 +244,18 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
       const { data } = await query.order('occurred_at', { ascending: false });
       if (!cancelled) { setTimeline(data || []); setLoading(false); }
 
+      if (isContact && entityId) {
+        const { data: acts, error: actErr } = await supabase.from('contact_activity')
+          .select('id,actor_id,actor_name,action,summary,created_at,subject_table')
+          .eq('contact_id', entityId)
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (!cancelled) {
+          if (actErr || !acts) setEvents([]);
+          else setEvents(acts.map(a => activityToEntry(a, entityId)).filter(Boolean));
+        }
+      } else if (!cancelled) setEvents([]);
+
       // Which of these rows has a recorded call behind it? One query for the whole
       // timeline rather than one per row — the transcript and the audio stay put
       // until asked for, so the timeline loads at the same speed it always did.
@@ -207,7 +272,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
       }
     })();
     return () => { cancelled = true; };
-  }, [entityType, entityId, isContact]);
+  }, [entityType, entityId, isContact, activityTick]);
 
   // Auto-thread real Gmail messages onto a contact's timeline (read-only).
   useEffect(() => {
@@ -366,6 +431,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
   async function completeReminder(t) {
     await supabase.from('tasks').update({ completed: true, completed_at: new Date().toISOString(), status: 'done' }).eq('id', t.id);
     setReminders(prev => prev.filter(x => x.id !== t.id));
+    setActivityTick(n => n + 1);
   }
   function dueInfo(due) {
     if (!due) return { label: 'no date', tone: 'muted', sort: Infinity };
@@ -483,6 +549,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
 
       setBody(''); setDuration(''); setFollowUpOn(false); setFollowUpWhen(''); setWhenLocal(nowLocalInput());
       setMentionIds([]); setMentionQuery(null);
+      setActivityTick(n => n + 1);
     } catch (e) {
       notify("Couldn't log activity: " + (e.message || e), 'error');
     } finally { setSaving(false); }
@@ -522,7 +589,7 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
 
   const k = ACTIVITY_KINDS[kind];
   // Merge stored entries with read-only synced emails for display
-  const merged = [...timeline, ...emails];
+  const merged = [...timeline, ...emails, ...events];
   const presentKinds = ACTIVITY_ORDER.filter(kk => merged.some(t => (t.kind || 'note') === kk));
   const allTags = Array.from(new Set(timeline.flatMap(t => t.tags || []))).sort();
   const passKind = (t) => filter === 'all' || (t.kind || 'note') === filter;
@@ -611,14 +678,26 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
             {e.duration_minutes ? <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>· {e.duration_minutes}m</span> : null}
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: '10px', color: 'var(--text-3)' }} title={new Date(e.occurred_at).toLocaleString()}>{timeOf(e.occurred_at)} · {relTime(e.occurred_at)}</span>
+            {!e._activity && (
             <div className="activity-actions" style={{ display: 'flex', gap: '2px' }}>
               <button onClick={() => setFollowupFor(e)} title="Draft a follow-up email or text" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="mail" size={14} /></button>
               {!e._email && <button onClick={() => togglePin(e)} title={e.pinned ? 'Unpin' : 'Pin to top'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 3px', opacity: e.pinned ? 1 : 0.5 }}><Icon name="pin" size={14} /></button>}
               {!e._email && <button onClick={() => startEdit(e)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="edit" size={14} /></button>}
               {!e._email && <button onClick={() => removeEntry(e)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '11px', padding: '0 3px' }}><Icon name="trash" size={14} /></button>}
             </div>
+            )}
           </div>
           {(e.body || e.brief) && <div style={{ fontSize: '13px', color: 'var(--text-1)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{decodeEntities(e.body || e.brief)}</div>}
+          {hasServerAttribution(e) && (
+            <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ActorMark name={e.author_name} />
+              <span style={{ fontSize: 10.5, color: 'var(--text-3)' }}>
+                {e._action === 'task_completed'
+                  ? completedByline(e.author_name, e.created_at || e.occurred_at)
+                  : byline(e.author_name, e.created_at || e.occurred_at)}
+              </span>
+            </div>
+          )}
           {e._email && (
             <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => setOpenEmail(openEmail === e.id ? null : e.id)}
@@ -699,9 +778,10 @@ export default function ActivityTimeline({ entityType = 'contact', entityId, con
               ))}
             </div>
           )}
-          {(edited || e.follow_up_at) && (
+          {(edited || e.edited_at || e.follow_up_at) && (
             <div style={{ marginTop: '5px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {edited && <span style={{ fontSize: '10px', color: 'var(--text-3)', fontStyle: 'italic' }}>edited {relTime(e.updated_at)}</span>}
+              {e.edited_at && <span style={{ fontSize: '10px', color: 'var(--text-3)', fontStyle: 'italic' }}>{editedByline(e.edited_by_name, e.edited_at)}</span>}
+              {!e.edited_at && edited && <span style={{ fontSize: '10px', color: 'var(--text-3)', fontStyle: 'italic' }}>edited {relTime(e.updated_at)}</span>}
               {e.follow_up_at && <span style={{ fontSize: '10px', color: 'var(--accent)' }}><Icon name="clock" size={10} /> follow-up {new Date(e.follow_up_at).toLocaleDateString()}</span>}
             </div>
           )}
