@@ -17,6 +17,7 @@ import SingleContactPicker from './SingleContactPicker';
 import QuoTextModal from './QuoTextModal';
 import FollowupDraftModal from './FollowupDraftModal';
 import ActivityTimeline from './ActivityTimeline';
+import ClientTimeline from './ClientTimeline';
 import { completedByline } from '../lib/activityAttribution';
 import { loadContactTasks } from '../lib/contactTasks';
 import { saveTaskFromModal, deleteTask } from '../taskSave';
@@ -35,7 +36,6 @@ const CadenceSuggestion = lazy(() => import('./CadenceSuggestion'));
 const AgentProduction = lazy(() => import('./AgentProduction'));
 
 export default function ContactDetailModal({ contact, profile, onClose, onEdit, onBack, onProfileUpdate, userId, contacts = [], setContacts }) {
-
   useBackClose(onClose);
   const [analyzing, setAnalyzing] = useState(false);
   const [textTo, setTextTo] = useState(null); // { phone } when the Quo text composer is open
@@ -50,7 +50,6 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
   // primary signal. The DISC summary and reasoning above already tell the story.
   const [showEvidence, setShowEvidence] = useState(false);
   const [showBaselineForm, setShowBaselineForm] = useState(false);
-
   // Brain entries + investments linked to this contact
   const [linkedBrain, setLinkedBrain] = useState([]);
   const [linkedInvestments, setLinkedInvestments] = useState([]);
@@ -1497,6 +1496,7 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
             </div>
           )}
 
+          <ClientTimeline contact={contact} userId={userId} />
           <ActivityTimeline
             entityType="contact"
             entityId={contact.id}

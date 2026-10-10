@@ -91,6 +91,10 @@ guard access_batch1 static
 # lanes; the live half (anon-key probes, read-only) in full. BLOCKS.
 guard access_batch2 static
 
+# CRM Phase 1 (10 Oct 2026): the client timeline + voice Save stay SECURITY INVOKER,
+# closed to anon, own-contact only; live role checks (rollback-only) in full. BLOCKS.
+guard timeline_access static
+
 # M6 (9 Oct 2026): call every edge function the way a stranger can (anon key
 # only) and block if any answers 2xx. Public portals/webhooks are listed with a
 # reason and never called. Static half (the list is current) in both lanes; the

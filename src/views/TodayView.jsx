@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { enqueue } from '../outbox';
 import { todayNY } from '../clock';
 import { onDay } from '../occurrences';
 import { supabase } from '../dataService';
@@ -16,6 +15,7 @@ import { HandledLine } from './DoneForYou';
 import GoalsBand from './GoalsBand';
 import { calm } from '../calm';
 import TodayThree from './TodayThree';
+import VoiceCapture from './VoiceCapture';
 
 // ── TODAY — one app that makes everything else disappear (1 Oct 2026) ────────
 //
@@ -173,12 +173,12 @@ export default function TodayView({
 
 // Voice note, Plan my day — tools, not tasks. Quiet links, no floating button.
 function QuickActions({ setView, userId, onOpenPlan }) {
-  return (
+  return (<>
+    <VoiceCapture userId={userId} />
     <div style={{ ...calm.actions, marginTop: 4, marginBottom: 8 }}>
-      <VoiceNote setView={setView} userId={userId} inline />
       {onOpenPlan && <button type="button" style={calm.btnQuiet} onClick={() => onOpenPlan()}>Plan my day</button>}
     </div>
-  );
+  </>);
 }
 
 // How you're doing — a reward at the end, never a gate at the start.
@@ -261,170 +261,6 @@ function TidyOldTasks({ userId, setTasks, tasks }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Voice-Note to Everything ──────────────────────────────────────────────────
-// Tap, talk for 20 seconds after a showing, and PrismOS files it: a clean contact
-// note, the to-dos with due dates, and a drafted follow-up. Ease of use is the new
-// #1 thing agents want — this is the "saves brainpower" feature they'll open the
-// app for between appointments. Records with MediaRecorder, transcribes + extracts
-// server-side, then hands back a review card. Nothing saves until they tap Apply.
-function VoiceNote({ setView, userId, inline = false }) {
-  const [phase, setPhase] = useState('idle');   // idle | recording | working | review | error
-  const [secs, setSecs] = useState(0);
-  const [result, setResult] = useState(null);
-  const [transcript, setTranscript] = useState('');
-  const [msg, setMsg] = useState('');
-  const recRef = React.useRef(null);
-  const chunksRef = React.useRef([]);
-  const timerRef = React.useRef(null);
-
-  const start = async () => {
-    setMsg('');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
-      chunksRef.current = [];
-      mr.ondataavailable = e => { if (e.data.size) chunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' });
-        await process(blob);
-      };
-      mr.start();
-      recRef.current = mr; setPhase('recording'); setSecs(0);
-      timerRef.current = setInterval(() => setSecs(s => s + 1), 1000);
-    } catch (_) { setMsg('Microphone access is needed to capture a voice note.'); setPhase('error'); }
-  };
-  const stop = () => { clearInterval(timerRef.current); try { recRef.current && recRef.current.stop(); } catch (_) {} setPhase('working'); };
-  const cancel = () => { clearInterval(timerRef.current); try { recRef.current && recRef.current.stop(); } catch (_) {} chunksRef.current = []; setPhase('idle'); };
-
-  const process = async (blob) => {
-    let b64 = null;
-    try {
-      b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
-      const { data, error } = await supabase.functions.invoke('voice-note', { body: { audio_base64: b64 } });
-      if (error || data?.error) throw new Error(data?.error || 'Could not process the note');
-      if (data.empty) { setMsg('I couldn\u2019t hear anything — try again.'); setPhase('error'); return; }
-      setTranscript(data.transcript || ''); setResult(data.result || null); setPhase('review');
-    } catch (e) {
-      // Keep the audio on the phone and retry, so the worst outcome is a delay,
-      // never a loss. BUT DO NOT LIE ABOUT WHY: saying "No signal" for EVERY
-      // failure is how a broken voice note went unnoticed — the transcription
-      // service rejected every submission and the app blamed the connection.
-      const offline = (typeof navigator !== 'undefined' && navigator.onLine === false)
-        || /failed to fetch|networkerror|load failed|connection/i.test(String((e && e.message) || ''));
-      try {
-        await enqueue(userId, 'voice_note', { audio_base64: b64 }, 'Voice note (' + Math.round(blob.size / 1024) + 'KB)');
-        setMsg(offline
-          ? 'No signal — the recording is saved on your phone and will send itself when you’re back online.'
-          : 'Couldn’t process that note: ' + (e.message || 'unknown error')
-            + '. The recording is saved on your phone and will retry — nothing is lost.');
-      } catch (_) {
-        setMsg((e.message || 'Something went wrong') + ' — and the recording could not be saved on this device.');
-      }
-      setPhase('error');
-    }
-  };
-
-  const apply = async () => {
-    setPhase('working');
-    try {
-      await supabase.rpc('apply_voice_note', {
-        p_contact_id: result.contact_id || null, p_note: result.note || transcript,
-        p_tasks: (result.tasks || []).filter(t => t.title), p_title: result.contact_name ? ('Note · ' + result.contact_name) : 'Voice note',
-      });
-      setPhase('done'); setTimeout(() => { setPhase('idle'); setResult(null); }, 1600);
-    } catch (e) { setMsg('Could not save: ' + (e.message || e)); setPhase('error'); }
-  };
-
-  // A quiet button in Today's "More" — Josh: "A microphone floating over
-  // that. Way too much going on." No floating trigger any more.
-  if ((phase === 'idle' || phase === 'done') && inline) {
-    return (
-      <button type="button" onClick={phase === 'idle' ? start : undefined} style={calm.btnQuiet}>
-        {phase === 'done' ? '✓ Filed' : '🎙 Voice note'}
-      </button>
-    );
-  }
-  if (phase === 'idle' || phase === 'done') {
-    return (
-      <button onClick={phase === 'idle' ? start : undefined}
-        style={{ position: 'fixed', right: 18, bottom: 92, zIndex: 1200, width: 56, height: 56, borderRadius: '50%', border: 'none', cursor: 'pointer', background: phase === 'done' ? '#22c55e' : 'linear-gradient(150deg,#EBCB82,#C5A95E)', color: '#100D09', fontSize: 22, boxShadow: '0 8px 24px rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        title="Voice note">
-        {phase === 'done' ? '✓' : '🎙'}
-      </button>
-    );
-  }
-
-  return (
-    <div onClick={phase === 'review' ? undefined : cancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-base)', width: '100%', maxWidth: 560, borderRadius: '18px 18px 0 0', border: '1px solid var(--border)', padding: '20px 18px 34px', maxHeight: '90vh', overflowY: 'auto' }}>
-        {phase === 'recording' && (
-          <div style={{ textAlign: 'center', padding: '10px 0 6px' }}>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.16em', fontSize: 12, color: '#EBCB82', marginBottom: 10 }}>Listening…</div>
-            <div style={{ width: 84, height: 84, borderRadius: '50%', margin: '0 auto 14px', background: 'rgba(235,203,130,.14)', border: '2px solid #EBCB82', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34, animation: 'livePulse 1.4s ease-in-out infinite' }}>🎙</div>
-            <div style={{ fontSize: 26, fontFamily: "'Fraunces',serif", color: 'var(--text-1)', marginBottom: 4 }}>{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 18 }}>Say who it's about, what happened, and any next steps.</div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <button onClick={stop} style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 12, padding: '12px 26px', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>Done</button>
-              <button onClick={cancel} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 18px', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-            </div>
-          </div>
-        )}
-        {phase === 'working' && (
-          <div style={{ textAlign: 'center', padding: '30px 0' }}>
-            <div style={{ fontSize: 30, marginBottom: 10 }}>✨</div>
-            <div style={{ fontSize: 15, color: 'var(--text-1)' }}>Turning your note into filed work…</div>
-          </div>
-        )}
-        {phase === 'error' && (
-          <div style={{ textAlign: 'center', padding: '24px 0' }}>
-            <div style={{ fontSize: 14, color: '#fca5a5', marginBottom: 16 }}>{msg}</div>
-            <button onClick={() => setPhase('idle')} style={{ background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 18px', cursor: 'pointer' }}>Close</button>
-          </div>
-        )}
-        {phase === 'review' && result && (
-          <>
-            <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 300, fontSize: 21, color: 'var(--text-1)', marginBottom: 2 }}>Here's what I heard.</div>
-            <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 14 }}>Review and file it — nothing is saved until you tap Apply.</div>
-            {result.contact_name && (
-              <div style={{ marginBottom: 12 }}><div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>About</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>{result.contact_name}{!result.contact_id && <span style={{ fontSize: 11, color: '#EBCB82', fontWeight: 400 }}> · not matched to a contact</span>}</div></div>
-            )}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Note</div>
-              <textarea value={result.note || ''} onChange={e => setResult({ ...result, note: e.target.value })} rows={3}
-                style={{ width: '100%', boxSizing: 'border-box', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-1)', padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5 }} />
-            </div>
-            {(result.tasks || []).length > 0 && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Tasks ({result.tasks.length})</div>
-                {result.tasks.map((t, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ color: '#22c55e', fontSize: 13 }}>✓</span>
-                    <span style={{ flex: 1, fontSize: 13, color: 'var(--text-1)' }}>{t.title}</span>
-                    {t.due && <span style={{ fontSize: 11.5, color: '#EBCB82' }}>{new Date(t.due + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
-                    <button onClick={() => setResult({ ...result, tasks: result.tasks.filter((_, j) => j !== i) })} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 15 }}>×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {result.followup && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Suggested follow-up</div>
-                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: 'var(--text-1)', fontStyle: 'italic' }}>“{result.followup}”</div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={apply} style={{ background: '#EBCB82', color: '#100D09', border: 'none', borderRadius: 12, padding: '12px 22px', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>Apply</button>
-              <button onClick={() => { setPhase('idle'); setResult(null); }} style={{ background: 'transparent', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 18px', fontSize: 14, cursor: 'pointer' }}>Discard</button>
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 }
