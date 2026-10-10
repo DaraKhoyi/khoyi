@@ -26,6 +26,7 @@
 // still owns the sales they made.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const cors = {
@@ -110,7 +111,7 @@ Deno.serve(async (req) => {
   try {
     const auth = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
     const internal = (QCP && (req.headers.get("x-qcp-token") || "") === QCP) || auth === SERVICE_KEY;
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY, withTokenCrypto());
 
     let ownerId: string | null = null;
     if (!internal) {

@@ -37,6 +37,7 @@
 
 import { raiseConnectionAlert, resolveConnectionAlert } from "../_shared/connectionAlert.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isSealed, withTokenCrypto } from "../_shared/googleTokens.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -92,6 +93,12 @@ function isRevoked(status: number, text: string): boolean {
 async function probe(account: Record<string, unknown>) {
   if (!account.refresh_token) {
     return { ok: false, revoked: true, detail: "No refresh_token on account — reconnect Google." };
+  }
+  // A token that is still sealed here was not decrypted (GOOGLE_TOKEN_KEY
+  // missing or wrong). That is OUR problem, never a revoked grant: sending it to
+  // Google would come back invalid_grant and tell the agent to reconnect.
+  if (isSealed(account.refresh_token)) {
+    return { ok: false, revoked: false, detail: "Stored token could not be decrypted — check GOOGLE_TOKEN_KEY." };
   }
   let r: Response;
   try {
@@ -151,7 +158,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (!isServiceCaller(req)) return json({ error: "Unauthorized" }, 401);
 
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, withTokenCrypto());
   const now = Date.now();
   const nowIso = new Date().toISOString();
 

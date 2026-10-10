@@ -15,6 +15,7 @@
 // service-role path: nothing should be able to unsubscribe on someone's behalf.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const cors = {
@@ -62,7 +63,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const auth = req.headers.get("Authorization") || "";
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY, withTokenCrypto());
     const { data: { user } } = await admin.auth.getUser(auth.replace("Bearer ", ""));
     if (!user) return json({ error: "Not authenticated" }, 401);
     // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).

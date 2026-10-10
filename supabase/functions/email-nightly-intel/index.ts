@@ -26,6 +26,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const corsHeaders = {
@@ -144,7 +145,7 @@ serve(async (req) => {
   const watermarkDays = Math.max(1, Math.min(Number(body.watermark_days ?? 2), 30));
   const dryRun = !!body.dry_run;
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, withTokenCrypto());
   let acctQ = supabase.from("email_accounts").select("*").eq("is_active", true).eq("provider", "google").eq("intel_enabled", true);
   if (body.account_id) acctQ = acctQ.eq("id", body.account_id);
   const { data: accounts, error: acctErr } = await acctQ;
