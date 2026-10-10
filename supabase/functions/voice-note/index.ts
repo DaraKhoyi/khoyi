@@ -4,8 +4,13 @@
 // draft the follow-up — then hand it back as a review card. Nothing is saved until
 // the agent taps Apply.
 //
-// POST { audio_base64, mime? }  (authenticated)
-// -> { ok, transcript, result:{ contact_id?, contact_name?, note, tasks:[{title,due}], followup? } }
+// POST { audio_base64, mime?, contact_id? }  (authenticated)
+// -> { ok, transcript, result:{ contact_id?, contact_name?, note, tasks:[{title,due}], promises:[{title,due,owner}], followup? } }
+// contact_id (CRM Phase 1, 10 Oct): recorded from a contact screen, so the memo is
+// about that person. It must be a contact the caller OWNS; no contact list goes to
+// the model then (cheaper, and no other names leave the database).
+// Cost guardrail: an agent who has spent $3 of AI this month gets the raw
+// transcript only (no AI step) until the month turns.
 
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -13,6 +18,7 @@ import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const MODEL = "claude-sonnet-4-6";
+const MONTHLY_CAP_USD = 3;
 
 async function transcribe(bytes: Uint8Array, aaiKey: string): Promise<string> {
   // 1) upload the audio bytes
@@ -56,7 +62,7 @@ Deno.serve(async (req) => {
     const uid = u?.user?.id;
     if (!uid) return new Response(JSON.stringify({ error: "Not authenticated" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
 
-    const { audio_base64 } = await req.json();
+    const { audio_base64, contact_id: hintId } = await req.json();
     if (!audio_base64) return new Response(JSON.stringify({ error: "audio_base64 required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
 
     const aaiKey = Deno.env.get("ASSEMBLYAI_API_KEY") || "";
@@ -67,11 +73,23 @@ Deno.serve(async (req) => {
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
+    // Monthly AI guardrail ($3 per agent). Checked BEFORE spending anything.
+    const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
+    const { data: spendRows } = await admin.from("ai_usage_log").select("cost_usd").eq("user_id", uid).gte("created_at", monthStart.toISOString()).limit(5000);
+    const spent = (spendRows || []).reduce((a: number, r: any) => a + Number(r.cost_usd || 0), 0);
+    const overCap = spent >= MONTHLY_CAP_USD;
+
+    let hint: any = null;
+    if (hintId) {
+      const { data: h } = await admin.from("contacts").select("id, name").eq("id", hintId).eq("user_id", uid).maybeSingle();
+      hint = h || null;
+    }
+
     const transcript = await transcribe(bytes, aaiKey);
     if (!transcript.trim()) return new Response(JSON.stringify({ ok: true, transcript: "", result: null, empty: true }), { headers: { ...cors, "Content-Type": "application/json" } });
 
     // pull the agent's contacts (names only) so Claude can match who it's about
-    const { data: contacts } = await admin.from("contacts").select("id, name").eq("user_id", uid).not("name", "is", null).limit(2000);
+    const { data: contacts } = hint ? { data: [hint] } : await admin.from("contacts").select("id, name").eq("user_id", uid).not("name", "is", null).limit(2000);
     const names = (contacts || []).map((c: any) => c.name).slice(0, 800);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -80,13 +98,17 @@ Deno.serve(async (req) => {
   "contact_name": "the person this is about, matched to the provided list if possible, else your best read, else null",
   "note": "a clean, third-person contact note capturing what happened and what matters (1-4 sentences)",
   "tasks": [ { "title": "a clear to-do", "due": "YYYY-MM-DD or null" } ],
+  "promises": [ { "title": "something the agent promised the client, or the client promised the agent", "due": "YYYY-MM-DD or null", "owner": "me or them" } ],
   "followup": "a short, warm follow-up text to the person in the agent's voice, or null if none is implied"
 }
 Today is ${today}. Resolve relative dates ("this weekend", "Monday", "in two days") to real dates. Keep tasks concrete and few. If the memo names a property or people, keep those details in the note.`;
 
-    const usr = `Known contacts (match the memo to one if it clearly fits): ${names.join(", ").slice(0, 6000)}\n\nThe agent said:\n"""${transcript}"""`;
+    const usr = hint ? `This memo is about ${hint.name}.\n\nThe agent said:\n"""${transcript}"""` : `Known contacts (match the memo to one if it clearly fits): ${names.join(", ").slice(0, 6000)}\n\nThe agent said:\n"""${transcript}"""`;
 
-    let result: any = { contact_name: null, note: transcript, tasks: [], followup: null };
+    let result: any = { contact_name: hint?.name || null, note: transcript, tasks: [], promises: [], followup: null };
+    if (overCap) {
+      return new Response(JSON.stringify({ ok: true, transcript, capped: true, result: { ...result, contact_id: hint?.id || null } }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -98,11 +120,13 @@ Today is ${today}. Resolve relative dates ("this weekend", "Monday", "in two day
       let text = (data?.content || []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("").replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(text);
       result = { ...result, ...parsed };
+      if (!Array.isArray(result.promises)) result.promises = [];
+      if (!Array.isArray(result.tasks)) result.tasks = [];
     } catch (_) { /* keep the raw-transcript fallback */ }
 
     // resolve the matched name to a contact_id
-    let contact_id: string | null = null;
-    if (result.contact_name) {
+    let contact_id: string | null = hint?.id || null;
+    if (!contact_id && result.contact_name) {
       const want = String(result.contact_name).toLowerCase().trim();
       const hit = (contacts || []).find((c: any) => (c.name || "").toLowerCase().trim() === want)
         || (contacts || []).find((c: any) => (c.name || "").toLowerCase().includes(want) || want.includes((c.name || "").toLowerCase()));
