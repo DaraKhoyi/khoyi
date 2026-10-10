@@ -17,6 +17,8 @@ import SingleContactPicker from './SingleContactPicker';
 import QuoTextModal from './QuoTextModal';
 import FollowupDraftModal from './FollowupDraftModal';
 import ActivityTimeline from './ActivityTimeline';
+import { completedByline } from '../lib/activityAttribution';
+import { loadContactTasks } from '../lib/contactTasks';
 import { saveTaskFromModal, deleteTask } from '../taskSave';
 const TaskModal = lazy(() => import('./TaskModal'));
 import RelationshipIntel from './RelationshipIntel';
@@ -90,10 +92,13 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
         eisenhower_quadrant: newTaskQuadrant,
         eisenhower_rank: nextRank,
         status: 'open',
+        contact_id: contact.id,
       }).select().single();
       if (error) throw error;
-      // Link via RPC
-      await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [contact.id] });
+      // The link table only accepts a contact the caller owns. The task row
+      // already points at the contact, which is what a shared timeline reads.
+      const { error: linkErr } = await supabase.rpc('set_task_contacts', { p_task_id: t.id, p_contact_ids: [contact.id] });
+      if (linkErr && contact.user_id === userId) throw linkErr;
       // Refresh linked tasks list
       setLinkedTasks(prev => [{ ...t }, ...prev]);
       setNewTaskTitle(''); setNewTaskQuadrant('B'); setShowAddTask(false);
@@ -203,17 +208,9 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
     if (!contact?.id) return;
     let cancelled = false;
     (async () => {
-      // Tasks linked to this contact
-      const { data: linkRows } = await supabase.from('task_contacts')
-        .select('task_id').eq('contact_id', contact.id);
-      if (linkRows && linkRows.length > 0) {
-        const taskIds = linkRows.map(r => r.task_id);
-        const { data: tasks } = await supabase.from('tasks')
-          .select('*').in('id', taskIds).order('completed').order('due_date', { nullsFirst: false });
-        if (!cancelled && tasks) setLinkedTasks(tasks);
-      } else if (!cancelled) {
-        setLinkedTasks([]);
-      }
+      // Tasks linked to this contact, including ones another agent added on a shared contact.
+      const tasks = await loadContactTasks(supabase, contact.id);
+      if (!cancelled) setLinkedTasks(tasks);
 
       // (Dated notes + manual interactions now load inside ActivityTimeline,
       // which renders the unified activity stream from public.contact_interactions.)
@@ -1551,8 +1548,15 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
           {(tasksExpanded ? linkedTasks : linkedTasks.slice(0, 3)).map(t => (
             <div key={t.id} onClick={() => setEditingTask(t)} title="Open and edit this task"
               style={{padding:'6px 8px',background:'var(--bg-base)',border:'1px solid var(--border)',borderRadius:'4px',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',fontSize:'12px',cursor:'pointer'}}>
-              <div style={{flex:1,minWidth:0,textDecoration: t.completed ? 'line-through' : 'none',color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>
-                {t.completed ? '✓ ' : '○ '}{t.title}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{textDecoration: t.completed ? 'line-through' : 'none',color: t.completed ? 'var(--text-3)' : 'var(--text-1)'}}>
+                  {t.completed ? '✓ ' : '○ '}{t.title}
+                </div>
+                {t.completed && (Object.prototype.hasOwnProperty.call(t, 'completed_by') || Object.prototype.hasOwnProperty.call(t, 'completed_by_name')) && (
+                  <div style={{fontSize:'10px',color:'var(--text-3)',marginTop:2}}>
+                    {completedByline(t.completed_by_name, t.completed_at)}
+                  </div>
+                )}
               </div>
               {t.due_date && (
                 <span style={{fontSize:'10px',color:'var(--text-3)',whiteSpace:'nowrap'}}>
