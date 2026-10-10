@@ -13,7 +13,7 @@ import DashboardHub from './views/DashboardHub';
 import TodayView from './views/TodayView';
 import FirstLook from './views/FirstLook';
 import SomedayView from './views/SomedayView';
-import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/FirstRun'; import { todayNY } from './clock';
+import ModeBar from './views/ModeBar'; import { OnboardingGate } from './views/FirstRun'; import { todayNY } from './clock'; import StartupSetup from './views/StartupSetup';
 import useTapActivate from './useTapActivate';
 import { TIPS_BY_SCREEN } from './tips';
 import MindsetMenu from './views/MindsetMenu';
@@ -1976,7 +1976,7 @@ function AppMain() {
           first session; it will be waiting next time. */}
       {dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && !justOnboarded && (
         <AnnouncementModal userId={user.id} />
-      )}
+      )}{dataLoaded && user && userSettings && userSettings.onboarding_complete !== false && userSettings.first_look_done === true && !justOnboarded && <StartupSetup userId={user.id} />}
       {sharedAudio && user && (
         <ShareRecordingModal
           file={sharedAudio}
