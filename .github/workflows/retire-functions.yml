@@ -1,0 +1,46 @@
+name: Retire live edge functions (manual)
+
+# Security audit L7: one-off functions that are deployed but have no source in
+# git. Nothing here runs on push or on merge. It runs only when someone presses
+# "Run workflow" and types the exact names to delete; anything that still has a
+# folder under supabase/functions is refused, so a typo cannot take down a real
+# function. Deleting a function is not undoable from here: to bring one back,
+# redeploy it from its saved source (on the box: /workspace/fixes/quo-backfill/
+# rollback/quo-restore-v1 and quo-webhook-swap-v3) with `supabase functions deploy`.
+# Neither is called by any cron job or by the app (checked Oct 9 2026).
+on:
+  workflow_dispatch:
+    inputs:
+      functions:
+        description: 'Space-separated function names to delete from production'
+        required: true
+        default: 'quo-restore quo-webhook-swap'
+      confirm:
+        description: 'Type DELETE to confirm'
+        required: true
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    if: inputs.confirm == 'DELETE'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i supabase --no-save --no-audit --no-fund
+      - name: Delete
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FUNCS: ${{ inputs.functions }}
+        run: |
+          SB=./node_modules/.bin/supabase
+          for fn in $FUNCS; do
+            case "$fn" in *[!a-z0-9-]*) echo "::error::bad name $fn"; exit 1;; esac
+            if [ -d "supabase/functions/$fn" ]; then echo "::error::$fn still has source in the repo; refusing"; exit 1; fi
+          done
+          for fn in $FUNCS; do
+            echo "::group::Delete $fn"
+            "$SB" functions delete "$fn" --project-ref xlgfspnojjgvkuitcoaf
+            echo "::endgroup::"
+          done

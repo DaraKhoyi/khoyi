@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
+// Sweep mode is for pg_cron only (x-internal-token = EMAIL_INTEL_TOKEN) or the
+// service role. Found 9 Oct 2026 by the signed-out edge probe (M6): with no
+// signed-in user this fell through to the all-agents sweep for ANY caller.
+async function isCronCaller(req: Request): Promise<boolean> {
+  const it = Deno.env.get("EMAIL_INTEL_TOKEN") || "";
+  if (it && (req.headers.get("x-internal-token") || "") === it) return true;
+  return await isServiceCaller(req);
+}
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 function estDateOffset(days: number): string { return new Date(Date.now() + days * 864e5).toLocaleDateString("en-CA", { timeZone: "America/New_York" }); }
 
@@ -57,6 +66,7 @@ serve(async (req) => {
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
     const { data: { user } } = await sb.auth.getUser(token);
     if (user) return J({ ok: true, ...(await runForUser(sb, user.id)) });
+    if (!(await isCronCaller(req))) return J({ ok: false, error: "sign in first" }, 401);
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
     const { data: pausedRows } = await sb.from("agent_controls").select("user_id").eq("paused", true);
     const paused = new Set((pausedRows || []).map((r: any) => r.user_id));
