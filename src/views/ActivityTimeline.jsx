@@ -26,6 +26,7 @@ const ACTIVITY_KINDS = {
 
 function activityKind(action) {
   if (String(action || '').startsWith('task_')) return 'task';
+  if (String(action || '').startsWith('commitment_')) return 'task';
   if (action === 'status_changed') return 'status';
   if (action === 'stage_changed') return 'stage';
   if (action === 'field_edited') return 'field';
@@ -37,7 +38,7 @@ function activityKind(action) {
 function activityToEntry(a, entityId) {
   const show = a.action === 'note'
     ? a.subject_table === 'contact_notes'
-    : ['task_created', 'task_edited', 'task_completed', 'task_reopened', 'status_changed', 'stage_changed', 'field_edited'].includes(a.action);
+    : ['task_created', 'task_edited', 'task_completed', 'task_reopened', 'status_changed', 'stage_changed', 'field_edited', 'commitment_recorded', 'commitment_decided'].includes(a.action);
   if (!show) return null;
   return {
     id: 'act-' + a.id,

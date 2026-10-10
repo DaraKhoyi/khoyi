@@ -13,7 +13,7 @@ let bad = 0;
 const fail = (m) => { console.error('✗ ' + m); bad++; };
 const ok = (m) => console.log('✓ ' + m);
 const expect = (c, m) => (c ? ok(m) : fail(m));
-const sql = fs.readFileSync('supabase/sql/2026-10-10b_client_timeline_and_voice_save.sql', 'utf8');
+const sql = fs.readFileSync('supabase/sql/2026-10-10d_client_timeline_and_voice_save.sql', 'utf8');
 const fnBlock = (name) => sql.slice(sql.indexOf('function public.' + name), sql.indexOf('$$;', sql.indexOf('function public.' + name)));
 for (const f of ['contact_timeline', 'save_voice_note']) {
   const b = fnBlock(f);

@@ -15,7 +15,7 @@
 --   - save_voice_note only writes onto a contact the caller OWNS, and the
 --     09c act-as write block (with check) still applies.
 -- Indexes: two small ones so the phone/email matches are index lookups.
--- ROLLBACK: rollback/2026-10-10b_client_timeline_and_voice_save.down.sql
+-- ROLLBACK: rollback/2026-10-10d_client_timeline_and_voice_save.down.sql
 -- =====================================================================
 begin;
 set local lock_timeout = '5s';

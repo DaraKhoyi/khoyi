@@ -429,9 +429,11 @@ select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111
 
 select pg_temp.ok(
   not has_function_privilege('authenticated', 'public.contact_actor_name(uuid)', 'execute')
-  and not has_function_privilege('authenticated', 'public.record_contact_activity(uuid, uuid, text, text, uuid, text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.record_contact_activity(uuid, uuid, text, text, uuid, text, text)', 'execute')
   and not has_function_privilege('authenticated', 'public.stamp_contact_author()', 'execute')
-  and not has_function_privilege('anon', 'public.record_contact_activity(uuid, uuid, text, text, uuid, text)', 'execute'),
+  and not has_function_privilege('authenticated', 'public.stamp_commitment_author()', 'execute')
+  and not has_function_privilege('anon', 'public.record_contact_activity(uuid, uuid, text, text, uuid, text, text)', 'execute')
+  and to_regprocedure('public.record_contact_activity(uuid,uuid,text,text,uuid,text)') is null,
   'attribution functions are callable from the API');
 
 do $$
@@ -467,5 +469,215 @@ select pg_temp.ok(
 
 reset role;
 select set_config('test.support_session', 'off', true);
+
+-- A note written on a private contact keeps its author. Sharing later lets
+-- B read that byline. C still cannot. A broker still cannot read the private
+-- client, or this team share.
+drop policy if exists commitments_own on public.commitments;
+create policy commitments_own on public.commitments
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+set local role authenticated;
+
+insert into public.contacts (id, user_id, name, shared_scope)
+values (
+  'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  '11111111-1111-1111-1111-111111111111',
+  'Later Shared',
+  'none'
+);
+
+insert into public.contact_interactions (user_id, contact_id, kind, body)
+values (
+  '22222222-2222-2222-2222-222222222222',
+  'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  'note',
+  'Written while private'
+);
+
+insert into public.commitments (user_id, contact_id, title, quote, status)
+values (
+  '22222222-2222-2222-2222-222222222222',
+  'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  'Send the disclosure',
+  'secret quote should stay off the timeline',
+  'proposed'
+);
+
+select pg_temp.ok(
+  (select shared_scope = 'none' from public.contacts where id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'contact was shared before the note');
+
+select pg_temp.ok(
+  (select author_id = '11111111-1111-1111-1111-111111111111'::uuid
+      and author_name = 'Agent A'
+     from public.contact_interactions
+    where body = 'Written while private'),
+  'a private note did not record A');
+
+select pg_temp.ok(
+  (select actor_name = 'Agent A'
+     from public.contact_activity
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      and summary = 'Added a note'),
+  'history was not written before the contact was shared');
+
+select pg_temp.ok(
+  (select author_name = 'Agent A' and decided_by is null
+     from public.commitments
+    where title = 'Send the disclosure'),
+  'commitment author was not A');
+
+update public.commitments
+   set status = 'done',
+       decided_by = '22222222-2222-2222-2222-222222222222',
+       decided_by_name = 'Agent B'
+ where title = 'Send the disclosure';
+
+select pg_temp.ok(
+  (select decided_by = '11111111-1111-1111-1111-111111111111'::uuid
+      and decided_by_name = 'Agent A'
+      and author_name = 'Agent A'
+     from public.commitments
+    where title = 'Send the disclosure'),
+  'commitment decision was taken from the client');
+
+select pg_temp.ok(
+  (select actor_name = 'Agent A'
+      and summary = 'Completed a commitment: Send the disclosure'
+      and summary not like '%secret quote%'
+     from public.contact_activity
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      and action = 'commitment_decided'),
+  'commitment completion was not attributed to A');
+
+-- Pinning is not an edit and does not write another history row.
+insert into public.contact_interactions (user_id, contact_id, kind, body)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  'note',
+  'Pin me'
+);
+
+update public.contact_interactions
+   set pinned = true
+ where body = 'Pin me';
+
+select pg_temp.ok(
+  (select edited_by is null and author_name = 'Agent A'
+     from public.contact_interactions
+    where body = 'Pin me'),
+  'pinning recorded an editor');
+
+select pg_temp.ok(
+  (select count(*) = 1 from public.contact_activity
+    where subject_table = 'contact_interactions'
+      and summary = 'Added a note'
+      and contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      and subject_id = (select id from public.contact_interactions where body = 'Pin me')),
+  'pinning wrote another history row');
+
+-- Still private: B sees none of it.
+select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+select pg_temp.ok(
+  (select count(*) = 0 from public.contact_interactions
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'B could read a private note before it was shared');
+
+select pg_temp.ok(
+  (select count(*) = 0 from public.contact_activity
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'B could read private history before it was shared');
+
+-- A shares the contact with the team.
+select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', true);
+update public.contacts
+   set shared_scope = 'team',
+       team_id = '44444444-4444-4444-4444-444444444444'
+ where id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+
+select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+
+select pg_temp.ok(
+  (select author_name = 'Agent A' and body = 'Written while private'
+     from public.contact_interactions
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      and body = 'Written while private'),
+  'after sharing, B could not see A''s byline');
+
+select pg_temp.ok(
+  (select actor_name = 'Agent A'
+     from public.contact_activity
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      and action = 'commitment_decided'),
+  'after sharing, B could not see who completed the commitment');
+
+select pg_temp.ok(
+  (select count(*) = 0 from public.commitments
+    where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'sharing revealed the commitment row itself');
+
+-- C is still outside the share.
+select set_config('request.jwt.claim.sub', '33333333-3333-3333-3333-333333333333', true);
+
+select pg_temp.ok(
+  (select count(*) = 0 from public.contacts where id = 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+  and (select count(*) = 0 from public.contact_interactions where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+  and (select count(*) = 0 from public.contact_activity where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+  and (select count(*) = 0 from public.tasks where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+  and (select count(*) = 0 from public.commitments where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'C could read a contact C was not shared with');
+
+-- Broker. Staff can read a Company Lead. A private client stays closed,
+-- including one that was later shared only with a team.
+reset role;
+create or replace function public.is_brokerage_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select auth.uid() = '77777777-7777-7777-7777-777777777777'::uuid
+$$;
+grant execute on function public.is_brokerage_staff() to authenticated;
+
+select pg_temp.ok(
+  (select count(*) = 0 from pg_policies
+    where schemaname = 'public'
+      and tablename in ('contact_interactions','contact_notes','tasks','commitments','contact_activity')
+      and coalesce(qual, '') ilike '%is_brokerage_staff%'
+      and policyname <> 'company_lead_staff_read'),
+  'attribution added a broker read');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '77777777-7777-7777-7777-777777777777', true);
+
+select pg_temp.ok(
+  (select count(*) = 0 from public.contacts where id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  and (select count(*) = 0 from public.contact_interactions where contact_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  and (select count(*) = 0 from public.contact_notes where contact_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  and (select count(*) = 0 from public.tasks where contact_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  and (select count(*) = 0 from public.contact_activity where contact_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+  and (select count(*) = 0 from public.commitments where contact_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
+  'broker could read a private client');
+
+select pg_temp.ok(
+  (select count(*) = 0 from public.contacts where id = 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+  and (select count(*) = 0 from public.contact_interactions where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+  and (select count(*) = 0 from public.contact_activity where contact_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  'broker could read a team-shared client');
+
+select pg_temp.ok(
+  (select count(*) > 0 from public.contacts where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')
+  and (select count(*) > 0 from public.contact_interactions where body = 'office note'),
+  'broker could not read a company lead');
+
+reset role;
 
 rollback;
