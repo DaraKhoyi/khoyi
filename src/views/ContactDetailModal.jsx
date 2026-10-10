@@ -18,6 +18,7 @@ import QuoTextModal from './QuoTextModal';
 import FollowupDraftModal from './FollowupDraftModal';
 import ActivityTimeline from './ActivityTimeline';
 import { completedByline } from '../lib/activityAttribution';
+import { loadContactTasks } from '../lib/contactTasks';
 import { saveTaskFromModal, deleteTask } from '../taskSave';
 const TaskModal = lazy(() => import('./TaskModal'));
 import RelationshipIntel from './RelationshipIntel';
@@ -207,25 +208,9 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
     if (!contact?.id) return;
     let cancelled = false;
     (async () => {
-      // Tasks linked to this contact, including ones another agent added
-      // on a contact that is shared with them (those point at contact_id).
-      const byId = new Map();
-      const { data: direct } = await supabase.from('tasks')
-        .select('*').eq('contact_id', contact.id);
-      (direct || []).forEach(t => byId.set(t.id, t));
-      const { data: linkRows } = await supabase.from('task_contacts')
-        .select('task_id').eq('contact_id', contact.id);
-      const missing = (linkRows || []).map(r => r.task_id).filter(id => id && !byId.has(id));
-      if (missing.length) {
-        const { data: tasks } = await supabase.from('tasks').select('*').in('id', missing);
-        (tasks || []).forEach(t => byId.set(t.id, t));
-      }
-      if (!cancelled) {
-        setLinkedTasks([...byId.values()].sort((a, b) => {
-          if (!!a.completed !== !!b.completed) return a.completed ? 1 : -1;
-          return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
-        }));
-      }
+      // Tasks linked to this contact, including ones another agent added on a shared contact.
+      const tasks = await loadContactTasks(supabase, contact.id);
+      if (!cancelled) setLinkedTasks(tasks);
 
       // (Dated notes + manual interactions now load inside ActivityTimeline,
       // which renders the unified activity stream from public.contact_interactions.)
