@@ -16,6 +16,7 @@ import GoalsBand from './GoalsBand';
 import { calm } from '../calm';
 import TodayThree from './TodayThree';
 import VoiceCapture from './VoiceCapture';
+import WinTheDay from './WinTheDay';
 
 // ── TODAY — one app that makes everything else disappear (1 Oct 2026) ────────
 //
@@ -71,6 +72,14 @@ export default function TodayView({
   // How this person asked to be shown things (Settings → How PrismOS shows things
   // to me). Three under "Needs you today" unless they chose one at a time.
   const [present, setPresent] = useState({ today_items: 3 });
+  // Win the Day pilot (10 Oct 2026): one Top 3 replaces GoalsBand + TodayThree +
+  // "Needs you today" for people in pilot_features. Off (old Today) on any error.
+  const [pilot, setPilot] = useState(false);
+  useEffect(() => {
+    let go = true;
+    supabase.rpc('my_pilot', { p_feature: 'win_the_day' }).then(({ data, error }) => { if (go) setPilot(!error && data === true); }, () => {});
+    return () => { go = false; };
+  }, [myUserId]);
   useEffect(() => {
     let go = true;
     const load = async () => {
@@ -124,24 +133,25 @@ export default function TodayView({
 
       {/* 1b — YOUR agenda, before anything inbound (4 Oct): contract dates this week,
           then the goals you chose for today. */}
-      {!isFirstRun && <GoalsBand userId={myUserId} tasks={tasks} setTasks={setTasks} events={events} setView={setView} firstName={first} />}
+      {!isFirstRun && pilot && <WinTheDay userId={myUserId} setTasks={setTasks} />}
+      {!isFirstRun && !pilot && <GoalsBand userId={myUserId} tasks={tasks} setTasks={setTasks} events={events} setView={setView} firstName={first} />}
 
       {/* 1c — THREE THINGS, one tap each (9 Oct 2026, Dara: compressed CRM plan).
           After the person's own goals (the agenda comes before anything inbound),
           before the rest of the day. Promises due within 48 hours lead, then a
           Company Lead waiting, then a missed caller. In-app only. */}
-      {!isFirstRun && <TodayThree userId={myUserId} setView={setView} />}
+      {!isFirstRun && !pilot && <TodayThree userId={myUserId} setView={setView} />}
 
       {/* 2 — What PrismOS did */}
-      <HandledLine setView={setView} />
+      {!pilot && <HandledLine setView={setView} />}
 
       {/* 3 — What needs you. A live lead first: it is money and it is perishable. */}
       <div style={{ marginTop: 18 }}>
         <LeadConcierge myUserId={myUserId} setView={setView} contacts={contacts} />
       </div>
       <DelegationInbox userId={myUserId} onChanged={notifyTasks} />
-      {!isFirstRun && <div style={calm.section}>Needs you today</div>}
-      {!isFirstRun && <ChiefQueue userId={myUserId} setView={setView} limit={3} oneAtATime={present.today_items === 1} onChanged={notifyTasks} />}
+      {!isFirstRun && !pilot && <div style={calm.section}>Needs you today</div>}
+      {!isFirstRun && !pilot && <ChiefQueue userId={myUserId} setView={setView} limit={3} oneAtATime={present.today_items === 1} onChanged={notifyTasks} />}
       {/* The day-before question, in the app itself (4 Oct): the push reaches only people
           with a device registered — 5 of 17 accounts. Shown only on the day it applies. */}
       {!isFirstRun && <div style={{ marginTop: 18 }}><SetAsideTomorrow userId={myUserId} /></div>}
@@ -156,6 +166,9 @@ export default function TodayView({
       </div>
       {more && (
         <div data-testid="today-more">
+          {/* Pilot: call review and the rest of "Needs you" stay one tap down, never lost. */}
+          {pilot && <HandledLine setView={setView} />}
+          {pilot && <ChiefQueue userId={myUserId} setView={setView} limit={3} oneAtATime={present.today_items === 1} onChanged={notifyTasks} />}
           <QuickActions setView={setView} userId={myUserId} onOpenPlan={onOpenPlan} />
           <MorningBrief setView={setView} />
           <CallList />
