@@ -719,6 +719,10 @@ async function logClientError(payload) {
     if (!__shouldLogErr(key)) return;
     let user_id = null, email = null;
     try { const { data } = await supabase.auth.getUser(); if (data && data.user) { user_id = data.user.id; email = data.user.email || null; } } catch (_) {}
+    // Signed-out callers cannot write client_errors (Batch 1/2 lockdown). Trying
+    // anyway failed with "permission denied", and that failure was then logged
+    // again as a client error once a session existed: noise, not signal.
+    if (!user_id) return;
     await supabase.from('client_errors').insert({
       user_id, email,
       view: payload.view || (typeof window !== 'undefined' ? window.__currentView : null) || null,
