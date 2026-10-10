@@ -1,6 +1,7 @@
 // github-status — server-side GitHub/Pages health for the Systems dashboard.
 // Holds the GitHub PAT as a Supabase secret (never shipped to the public frontend).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,6 +22,9 @@ async function gh(path: string, pat: string) {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Signed-in users (or the service role) only. Found 9 Oct 2026 by the signed-out
+  // edge probe (M6): the public anon key alone could call this.
+  { const gate = await requireServiceOr(req, corsHeaders); if (gate.res) return gate.res; }
   const J = (obj: unknown, status = 200) =>
     new Response(JSON.stringify(obj), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   try {

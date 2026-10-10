@@ -3,6 +3,7 @@
 // GET /v1/models validates the key + reachability with ZERO token cost.
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,9 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Signed-in users (or the service role) only. Found 9 Oct 2026 by the signed-out
+  // edge probe (M6): the public anon key alone could call this.
+  { const gate = await requireServiceOr(req, corsHeaders); if (gate.res) return gate.res; }
   const J = (obj: unknown, status = 200) =>
     new Response(JSON.stringify(obj), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   try {

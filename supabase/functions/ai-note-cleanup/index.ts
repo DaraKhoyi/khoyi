@@ -6,6 +6,7 @@
 // professional CRM timeline note. Preserves every concrete fact; never invents.
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
@@ -26,6 +27,9 @@ const KIND_HINT: Record<string, string> = {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Signed-in users (or the service role) only. Found 9 Oct 2026 by the signed-out
+  // edge probe (M6): the public anon key alone could call this.
+  { const gate = await requireServiceOr(req, corsHeaders); if (gate.res) return gate.res; }
   try {
     const { text, kind } = await req.json();
     if (!text || !String(text).trim()) {
