@@ -152,6 +152,8 @@ function tellUser(table, op, error) {
 
 function reportMutationError(table, op, error) {
   if (!error) return;
+  // A failed write to the error log must not report itself (loop + noise).
+  if (table === 'client_errors') return;
   tellUser(table, op, error);
   // Cap the reporting, not the checking — a broken table would otherwise spam
   // client_errors with thousands of identical rows during one outage.

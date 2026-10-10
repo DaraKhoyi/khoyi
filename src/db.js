@@ -15,6 +15,7 @@ const _appVersion = BUILD_VERSION || '';
 async function logDbError(where, error, ctx) {
   try {
     const { data: u } = await supabase.auth.getUser();
+    if (!u?.user?.id) return; // signed out: client_errors refuses the write
     await supabase.from('client_errors').insert({
       user_id: u?.user?.id || null,
       email: u?.user?.email || null,
