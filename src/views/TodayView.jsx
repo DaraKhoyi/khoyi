@@ -73,13 +73,9 @@ export default function TodayView({
   // to me). Three under "Needs you today" unless they chose one at a time.
   const [present, setPresent] = useState({ today_items: 3 });
   // Win the Day pilot (10 Oct 2026): one Top 3 replaces GoalsBand + TodayThree +
-  // "Needs you today" for people in pilot_features. Off (old Today) on any error.
-  const [pilot, setPilot] = useState(false);
-  useEffect(() => {
-    let go = true;
-    supabase.rpc('my_pilot', { p_feature: 'win_the_day' }).then(({ data, error }) => { if (go) setPilot(!error && data === true); }, () => {});
-    return () => { go = false; };
-  }, [myUserId]);
+  // "Needs you today" for people in pilot_features. Read from my_presentation()
+  // (no extra request); missing key = off = the current Today.
+  const pilot = Array.isArray(present.pilots) && present.pilots.includes('win_the_day');
   useEffect(() => {
     let go = true;
     const load = async () => {

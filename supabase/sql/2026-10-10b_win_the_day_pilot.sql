@@ -42,6 +42,18 @@ $$;
 revoke all on function public.my_pilot(text) from public, anon;
 grant execute on function public.my_pilot(text) to authenticated;
 
+-- The app reads the switch from my_presentation() (already called on Today), so
+-- no new request is made before this file is applied and nothing errors.
+create or replace function public.my_presentation() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return '{}'::jsonb; end if;
+  return public.presentation_of(auth.uid())
+    || jsonb_build_object('pilots', coalesce((select jsonb_agg(f.feature) from public.pilot_features f where f.user_id = auth.uid()), '[]'::jsonb));
+end $$;
+revoke all on function public.my_presentation() from public, anon;
+grant execute on function public.my_presentation() to authenticated;
+
 create table if not exists public.ui_events (
   id         bigint generated always as identity primary key,
   user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
