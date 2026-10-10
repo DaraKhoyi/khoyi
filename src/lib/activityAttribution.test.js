@@ -10,7 +10,7 @@ import {
 const WHEN = '2026-10-09T18:30:00.000Z';
 const opts = ['en-US', 'UTC'];
 
-describe('shared contact attribution lines', () => {
+describe('contact attribution lines', () => {
   it('names the agent and the time', () => {
     expect(byline('Ada Lovelace', WHEN, ...opts)).toBe('by Ada Lovelace, Oct 9, 2026, 6:30 PM');
   });
@@ -36,6 +36,12 @@ describe('shared contact attribution lines', () => {
     expect(initialsFromName('Ada')).toBe('A');
     expect(initialsFromName('')).toBe('');
     expect(initialsFromName(null)).toBe('');
+  });
+
+  it('uses the same byline whether or not the contact is shared', () => {
+    const row = { author_id: 'agent-a', author_name: 'Ada Lovelace' };
+    expect(hasServerAttribution(row)).toBe(true);
+    expect(byline(row.author_name, WHEN, ...opts)).toBe('by Ada Lovelace, Oct 9, 2026, 6:30 PM');
   });
 
   it('shows a byline only after the server columns are present', () => {
