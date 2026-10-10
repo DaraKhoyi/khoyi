@@ -379,3 +379,8 @@ verify_jwt = false
 
 [functions.suggest-categories]
 verify_jwt = false
+
+# Service role only, checked in code with _shared/serviceCaller.ts, like the
+# other service-called functions here (the runtime key is an sb_secret key).
+[functions.google-token-seal]
+verify_jwt = false

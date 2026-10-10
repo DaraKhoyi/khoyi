@@ -18,6 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const corsHeaders = {
@@ -113,6 +114,7 @@ serve(async (req) => {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      withTokenCrypto(),
     );
     // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
     if (await isImpersonatedRequest(supabase, req.headers.get("Authorization"))) return supportSessionResponse(corsHeaders);

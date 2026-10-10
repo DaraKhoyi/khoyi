@@ -4,6 +4,7 @@
 // (refreshed) access token. Returns base64url data for the client to save/open.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const cors = {
@@ -26,12 +27,12 @@ serve(async (req) => {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL"),
       Deno.env.get("SUPABASE_ANON_KEY"),
-      { global: { headers: { Authorization: req.headers.get("Authorization") || "" } } }
+      withTokenCrypto({ global: { headers: { Authorization: req.headers.get("Authorization") || "" } } })
     );
     const { data: owned, error: aerr } = await supabase
       .from("email_accounts").select("id").eq("id", account_id).maybeSingle();
     if (aerr || !owned) return J({ ok: false, error: "account not found or not yours" }, 404);
-    const admin = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const admin = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), withTokenCrypto());
     // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
     if (await isImpersonatedRequest(admin, req.headers.get("Authorization"))) return supportSessionResponse(cors);
     const { data: account } = await admin

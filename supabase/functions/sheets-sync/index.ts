@@ -14,6 +14,7 @@
 //   • Agent names resolve to agent_id via public.resolve_agent_id() (self-healing).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { requireServiceOr } from "../_shared/guard.ts";
 
@@ -154,7 +155,7 @@ Deno.serve(async (req) => {
   // pg_cron (service), or the owner / a broker admin pressing "Refresh" in Accounting (_shared/guard.ts).
   { const g = await requireServiceOr(req, cors, { staff: true }); if (g.res) return g.res; }
   try {
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, withTokenCrypto());
     const body = await req.json().catch(() => ({}));
 
     // 1) resolve the config (explicit id, or the active one)

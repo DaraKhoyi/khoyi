@@ -18,6 +18,7 @@
 // the others.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const corsHeaders = {
@@ -67,7 +68,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { account_id, message_id, links = [] } = body;
 
-    const admin = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const admin = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), withTokenCrypto());
 
     // Authenticate: user JWT, or the trusted internal path used by cron.
     const tokenStr = (req.headers.get("Authorization") || "").replace("Bearer ", "");

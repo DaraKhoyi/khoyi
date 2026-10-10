@@ -1,6 +1,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { logAiUsage } from "../_shared/aiUsage.ts";
 
 const cors = {
@@ -93,11 +94,11 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const authHeader = req.headers.get("Authorization") || "";
-    const userClient = createClient(SUPABASE_URL, ANON, { global: { headers: { Authorization: authHeader } } });
+    const userClient = createClient(SUPABASE_URL, ANON, withTokenCrypto({ global: { headers: { Authorization: authHeader } } }));
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return new Response(JSON.stringify({ error: "Not authenticated" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     const uid = user.id;
-    const db = createClient(SUPABASE_URL, SERVICE);
+    const db = createClient(SUPABASE_URL, SERVICE, withTokenCrypto());
 
     const body = await req.json().catch(() => ({}));
     const lookbackDays = body.lookback_days || 60;

@@ -16,6 +16,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -79,7 +80,7 @@ function diarize(t: any): string {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const admin = createClient(SUPABASE_URL, SERVICE);
+    const admin = createClient(SUPABASE_URL, SERVICE, withTokenCrypto());
     const internalTok = req.headers.get("x-internal-token") || "";
     const INTERNAL = Deno.env.get("CUBE_TOKEN") || "";
     let scopeUserId: string | null = null;
