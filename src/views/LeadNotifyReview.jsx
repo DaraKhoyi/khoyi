@@ -26,6 +26,7 @@ export default function LeadNotifyReview() {
   // aggressive — showing four of ninety-four hides the question being asked.
   const [tab, setTab] = useState('all');
   const [busy, setBusy] = useState(false);
+  const [agentCounts, setAgentCounts] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -35,6 +36,8 @@ export default function LeadNotifyReview() {
         supabase.auth.getUser(),
         supabase.from('agents').select('auth_user_id, name').not('auth_user_id', 'is', null),
       ]);
+      // Agents' own leads: counts only (10 Oct privacy rule). Company Leads arrive in full above.
+      try { const { data: c } = await supabase.rpc('lead_notify_counts', { p_days: 30 }); const nm = new Map((ags || []).map(a => [a.auth_user_id, a.name])); setAgentCounts((c || []).filter(x => x.user_id !== (me?.user?.id || null)).map(x => ({ ...x, name: nm.get(x.user_id) || 'Agent' })).sort((x, y) => y.total - x.total)); } catch (_) { setAgentCounts([]); }
       // The broker sees every agent's decisions, so each row has to say whose
       // notification it is — otherwise you are judging mail with no idea who it
       // was addressed to, and "Not lead" silences someone you did not mean.
@@ -42,7 +45,7 @@ export default function LeadNotifyReview() {
       const nameBy = new Map((ags || []).map(a => [a.auth_user_id, a.name]));
       setRows((Array.isArray(r) ? r : []).map(x => ({
         ...x,
-        agent_name: x.user_id && x.user_id !== mine ? (nameBy.get(x.user_id) || 'another agent') : null,
+        agent_name: x.user_id && x.user_id !== mine ? 'Company Lead · ' + (nameBy.get(x.user_id) || 'another agent') : null,
       })));
       setRt(s || null);
     } catch (_) { setRows([]); }
@@ -134,6 +137,18 @@ export default function LeadNotifyReview() {
           </>
         )}
       </div>
+
+      {agentCounts.length > 0 && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 12, border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text-2)' }}>
+          <div style={{ fontWeight: 700, color: '#EBCB82', marginBottom: 6 }}>Agents' own leads, last 30 days (counts only)</div>
+          {agentCounts.map(a => (
+            <div key={a.user_id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '3px 0' }}>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</span>
+              <span style={{ whiteSpace: 'nowrap', color: 'var(--text-3)' }}>{a.total} total · {a.alerted} alerted · {a.held} held</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
         {chip('would_send', 'Would send (' + counts.would_send + ')')}
