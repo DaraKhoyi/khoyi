@@ -65,7 +65,7 @@ function paidFromSerialCell(v: any, year: number, receivedIso: string | null): s
   const mo = parseInt(m[1], 10);
   const days = m[2].length === 1 ? [parseInt(m[2], 10), parseInt(m[2], 10) * 10] : [parseInt(m[2], 10)];
   const iso = (d: number) => `${year}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  const valid = days.filter((d) => d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && !isNaN(new Date(iso(d) + "T00:00:00Z").getTime())).map(iso);
+  const valid = days.filter((d) => d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && isRealDay(iso(d))).map(iso);
   if (!valid.length) return null;
   if (valid.length === 1 || !receivedIso) return valid[0];
   const floor = new Date(receivedIso + "T00:00:00Z").getTime() - 3 * 86400000;
@@ -73,7 +73,24 @@ function paidFromSerialCell(v: any, year: number, receivedIso: string | null): s
   return after[0] || valid[valid.length - 1];
 }
 
+// A real calendar day, or nothing. "9.31" / "9/31" passed the 1..31 range checks and
+// reached Postgres as 2026-09-31, which rejects the whole upsert ("date/time field
+// value out of range", Oct 9 sheets-sync run). JS Date silently rolls 31 Sep over to
+// 1 Oct, so it cannot be the check either: rebuild the day and compare its parts.
+function isRealDay(iso: string | null): boolean {
+  const m = iso && iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
+}
+
 function toDate(v: any, fallbackYear?: number): string | null {
+  const out = toDateRaw(v, fallbackYear);
+  return out && isRealDay(out) ? out : null;
+}
+
+function toDateRaw(v: any, fallbackYear?: number): string | null {
   if (!v) return null;
   // A real date cell arrives as a Date once cellDates is on. Use its parts
   // directly — going through toISOString() would shift the day across the
