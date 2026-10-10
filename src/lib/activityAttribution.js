@@ -1,8 +1,9 @@
-// How a shared-contact timeline says who did something.
+// How a contact timeline says who did something.
 //
-// The name and the time come from the row the database stored. The app does not
-// pick the actor. When the database has no name to give, the line says
-// "author unknown" — we do not invent one.
+// The line is the same on a private contact and a shared one. On a private
+// contact it is usually the agent themself. The name and the time come from
+// the row the database stored. The app does not pick the actor. When the
+// database has no name to give, the line says "author unknown".
 
 export function initialsFromName(name) {
   const clean = String(name || '').trim();

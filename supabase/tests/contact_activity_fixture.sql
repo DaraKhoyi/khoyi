@@ -152,13 +152,28 @@ create table public.tasks (
   completed_at timestamptz
 );
 
+create table public.commitments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  contact_id uuid references public.contacts(id) on delete cascade,
+  title text,
+  quote text,
+  status text default 'proposed',
+  due_date date,
+  next_step text,
+  owner text,
+  created_at timestamptz not null default now(),
+  decided_at timestamptz
+);
+
 alter table public.contacts enable row level security;
 alter table public.contact_interactions enable row level security;
 alter table public.contact_notes enable row level security;
 alter table public.tasks enable row level security;
+alter table public.commitments enable row level security;
 
 grant select, insert, update, delete on
-  public.contacts, public.contact_interactions, public.contact_notes, public.tasks, public.team_members
+  public.contacts, public.contact_interactions, public.contact_notes, public.tasks, public.commitments, public.team_members
   to authenticated;
 
 -- Names are copied onto the activity row. The signed-in role does not get
