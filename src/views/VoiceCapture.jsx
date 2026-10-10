@@ -5,9 +5,10 @@
 // nothing is ever sent to anyone (no text, no email). Save calls save_voice_note
 // (SECURITY INVOKER: only onto the agent's own contact). Failed uploads stay on the
 // phone (outbox) and retry, so a dead zone never loses a memo.
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../dataService';
 import { enqueue } from '../outbox';
+import { pendingVoiceReviews, dropVoiceReview } from '../lib/voiceReviews';
 
 const gold = '#EBCB82';
 const lbl = { fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 };
@@ -66,6 +67,16 @@ export default function VoiceCapture({ userId, contactId = null, contactName = '
   const [secs, setSecs] = useState(0);
   const [data, setData] = useState(null);
   const [msg, setMsg] = useState('');
+  const [queued, setQueued] = useState([]);   // retried offline notes waiting for review
+  const [fromQueue, setFromQueue] = useState(null);
+  useEffect(() => {
+    if (compact || !userId) return undefined;
+    const sync = () => setQueued(pendingVoiceReviews(userId));
+    sync(); window.addEventListener('voice-reviews', sync);
+    return () => window.removeEventListener('voice-reviews', sync);
+  }, [compact, userId]);
+  const openQueued = () => { const q = queued[0]; if (!q) return; setFromQueue(q.id); setData({ transcript: q.transcript, result: q.result }); setPhase('review'); };
+  const finishQueued = () => { if (fromQueue) { dropVoiceReview(userId, fromQueue); setFromQueue(null); } };
   const rec = useRef(null); const chunks = useRef([]); const timer = useRef(null); const cancelled = useRef(false);
 
   const start = async () => {
@@ -101,7 +112,7 @@ export default function VoiceCapture({ userId, contactId = null, contactName = '
     setPhase('saving');
     const { error } = await supabase.rpc('save_voice_note', { p_contact: data?.result?.contact_id || contactId || null, p_note: note, p_tasks: tasks, p_promises: promises });
     if (error) { setMsg('Could not save: ' + error.message); setPhase('error'); return; }
-    setPhase('done'); onSaved && onSaved(); setTimeout(() => { setPhase('idle'); setData(null); }, 1500);
+    finishQueued(); setPhase('done'); onSaved && onSaved(); setTimeout(() => { setPhase('idle'); setData(null); }, 1500);
   };
 
   const mic = (
@@ -121,6 +132,11 @@ export default function VoiceCapture({ userId, contactId = null, contactName = '
             <div style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.4 }}>Say who, what happened, and what’s next. I’ll write the note and suggest the tasks and promises.</div></div>
         </div>
       )}
+      {!compact && queued.length > 0 && phase === 'idle' && (
+        <button type="button" data-voice-queued onClick={openQueued} style={{ ...btn(false), width: '100%', marginBottom: 12, borderColor: 'rgba(235,203,130,.5)', color: gold }}>
+          🎙 {queued.length === 1 ? '1 voice note' : queued.length + ' voice notes'} recorded offline, ready to review
+        </button>
+      )}
       {open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2400, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div style={{ background: 'var(--bg-base)', width: '100%', maxWidth: 560, borderRadius: '18px 18px 0 0', border: '1px solid var(--border)', padding: '20px 18px 30px', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -137,7 +153,7 @@ export default function VoiceCapture({ userId, contactId = null, contactName = '
             )}
             {(phase === 'working' || phase === 'saving') && <div style={{ textAlign: 'center', padding: '28px 0', color: 'var(--text-1)' }}>{phase === 'working' ? 'Writing it up…' : 'Saving…'}</div>}
             {phase === 'error' && <div style={{ textAlign: 'center', padding: '18px 0' }}><div style={{ color: '#fca5a5', fontSize: 14, marginBottom: 14 }}>{msg}</div><button type="button" style={btn(false)} onClick={() => setPhase('idle')}>Close</button></div>}
-            {phase === 'review' && data && <VoiceReview result={data.result} transcript={data.transcript} busy={false} onSave={save} onDiscard={() => { setPhase('idle'); setData(null); }} />}
+            {phase === 'review' && data && <VoiceReview result={data.result} transcript={data.transcript} busy={false} onSave={save} onDiscard={() => { finishQueued(); setPhase('idle'); setData(null); }} />}
           </div>
         </div>
       )}

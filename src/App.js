@@ -100,6 +100,7 @@ import NotYourView from './views/NotYourView';
 import ViewLoadingFallback from './views/ViewLoadingFallback';
 import { touchScreen, previousScreen } from './openScreens';
 import { forkHandlers, attachTwoFingerFlip } from './flipGestures';
+import { replayVoiceNote } from './lib/voiceReviews';
 import { startOutboxWatcher, pruneDrafts } from './outbox';
 import { syncTimezone } from './deviceTime';
 import { MyNumbersView } from './views/MetricsPanels';
@@ -1198,12 +1199,8 @@ function AppMain() {
     if (!uid) return;
     pruneDrafts();
     return startOutboxWatcher({
-      voice_note: async (payload) => {
-        const { data, error } = await supabase.functions.invoke('voice-note', { body: payload });
-        // THROW to keep it queued. Returning quietly would delete the recording,
-        // which is the exact loss this exists to prevent.
-        if (error || data?.error) throw new Error(data?.error || error?.message || 'send failed');
-      },
+      // Retried notes land in the review queue (lib/voiceReviews) — never filed unseen, never dropped.
+      voice_note: (payload) => replayVoiceNote(payload, uid),
     }, uid);
   }, [session]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Remember the screen we are on so the switcher has something to flip to.

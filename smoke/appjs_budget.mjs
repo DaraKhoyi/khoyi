@@ -37,7 +37,7 @@ const BUDGETS = {
   // the chunk auto-reload removed (updates are now the person's choice).
   // 2030 -> 2021 on 2026-10-01: calm pass removed the menu sparkle component and
   // the inventory badges. Ratchet down so the space is not quietly refilled.
-  "src/App.js": 2021,
+  "src/App.js": 2018,
   "src/menuConfig.js": 200,
   // The accounting split is DONE: 6,745 -> ~650. These budgets are what keep it
   // that way — the file only reached 6,745 because nothing measured it, and the
@@ -76,7 +76,7 @@ const BUDGETS = {
   // security plumbing that cannot live anywhere smaller. Raised deliberately,
   // with the reason, per the rule printed by this guard.
   "src/views/ContactsView.jsx": 2115,
-  "src/views/ContactDetailModal.jsx": 2000,
+  "src/views/ContactDetailModal.jsx": 1987,
   "src/views/TasksView.jsx": 1550,
   // 1450 -> 1360 on 2026-10-06: the task block and its gesture moved to DayTaskBlock.jsx.
   "src/views/CalendarView.jsx": 1360,

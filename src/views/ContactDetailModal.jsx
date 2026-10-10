@@ -16,7 +16,6 @@ import { Tip } from '../tipsUi';
 import SingleContactPicker from './SingleContactPicker';
 import QuoTextModal from './QuoTextModal';
 import FollowupDraftModal from './FollowupDraftModal';
-import ActivityTimeline from './ActivityTimeline';
 import ClientTimeline from './ClientTimeline';
 import { completedByline } from '../lib/activityAttribution';
 import { loadContactTasks } from '../lib/contactTasks';
@@ -1497,18 +1496,6 @@ export default function ContactDetailModal({ contact, profile, onClose, onEdit, 
           )}
 
           <ClientTimeline contact={contact} userId={userId} />
-          <ActivityTimeline
-            entityType="contact"
-            entityId={contact.id}
-            contact={contact}
-            userId={userId}
-            contacts={contacts}
-            onContactPatch={(patch) => {
-              Object.assign(contact, patch);
-              if (setContacts) setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c));
-            }}
-            onEditTask={(t) => setEditingTask(t)}
-          />
         </div>
 
         </>)}
