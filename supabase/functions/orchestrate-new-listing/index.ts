@@ -2,6 +2,15 @@ import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { isServiceCaller } from "../_shared/serviceCaller.ts";
+// Sweep mode is for pg_cron only (x-internal-token = EMAIL_INTEL_TOKEN) or the
+// service role. Found 9 Oct 2026 by the signed-out edge probe (M6): with no
+// signed-in user this fell through to the all-agents sweep for ANY caller.
+async function isCronCaller(req: Request): Promise<boolean> {
+  const it = Deno.env.get("EMAIL_INTEL_TOKEN") || "";
+  if (it && (req.headers.get("x-internal-token") || "") === it) return true;
+  return await isServiceCaller(req);
+}
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODEL = "claude-sonnet-4-6";
 const LISTING_SIDES = ["listing"];
@@ -77,6 +86,7 @@ serve(async (req) => {
     const { data: { user } } = await sb.auth.getUser(token);
     const body = await req.json().catch(() => ({}));
     if (user && body.deal_id) { const id = await runForDeal(sb, user.id, body.deal_id); return J({ ok: true, run_id: id }); }
+    if (!(await isCronCaller(req))) return J({ ok: false, error: user ? "nothing to prepare" : "sign in first" }, user ? 400 : 401);
     // Sweep: recently listed, active listing-side deals with no launch plan yet
     const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
     const { data: agents } = await sb.from("agents").select("auth_user_id").not("auth_user_id", "is", null);
