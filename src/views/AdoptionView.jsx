@@ -26,13 +26,12 @@ export default function AdoptionView({ userId }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { (async () => {
     try {
-      const since = new Date(Date.now() - 7 * 864e5).toISOString();
       const [{ data: logs }, { data: ags }] = await Promise.all([
-        supabase.from('push_log').select('user_id,tag').eq('sent', 0).gt('created_at', since).limit(2000),
+        supabase.rpc('broker_missed_alert_counts'),  // counts only (10 Oct privacy rule)
         supabase.from('agents').select('email,auth_user_id').not('auth_user_id', 'is', null),
       ]);
       const byUser = {};
-      for (const r of logs || []) if (r.user_id && r.tag !== 'push-test') byUser[r.user_id] = (byUser[r.user_id] || 0) + 1;
+      for (const r of logs || []) if (r.user_id) byUser[r.user_id] = Number(r.missed) || 0;
       const byEmail = {};
       for (const a of ags || []) if (a.email && byUser[a.auth_user_id]) byEmail[String(a.email).toLowerCase()] = byUser[a.auth_user_id];
       setMissed(byEmail);
