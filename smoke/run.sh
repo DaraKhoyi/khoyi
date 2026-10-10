@@ -174,6 +174,9 @@ node smoke/edge_auth.mjs
 # Every edge function file must PARSE — the gate built the app but never the
 # functions, and property-research failed to deploy for a week unnoticed.
 node smoke/edge_parse.mjs
+# Google tokens are encrypted at rest; every function that handles them builds its
+# clients with withTokenCrypto() so it can open and seal them (8 Oct 2026).
+node smoke/token_crypto_guard.mjs || exit 1
 
 # Every function that spends AI credit records it against the user (standing
 # rule; 8 functions had been spending unrecorded). Static, runs in CI too.

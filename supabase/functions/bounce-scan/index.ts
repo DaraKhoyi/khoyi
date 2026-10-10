@@ -13,6 +13,7 @@
 // recipient, so we group by the original Message-ID and accumulate the recipients.
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { withTokenCrypto } from "../_shared/googleTokens.ts";
 import { isImpersonatedRequest, supportSessionResponse } from "../_shared/impersonation.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -201,7 +202,7 @@ async function scanUser(admin: any, userId: string, days: number) {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY, withTokenCrypto());
     const body = await req.json().catch(() => ({}));
     const days = Math.min(Math.max(parseInt(body.days || "7", 10) || 7, 1), 30);
     const internal = INGEST && (req.headers.get("x-internal-token") || "") === INGEST;
@@ -218,7 +219,7 @@ serve(async (req) => {
       return json({ ok: true, users: users.length, ...tot });
     }
 
-    const anonClient = createClient(SUPABASE_URL, ANON, { global: { headers: { Authorization: req.headers.get("Authorization") || "" } } });
+    const anonClient = createClient(SUPABASE_URL, ANON, withTokenCrypto({ global: { headers: { Authorization: req.headers.get("Authorization") || "" } } }));
     const { data: { user } } = await anonClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
     // Act-as support sessions never reach the agent's Google data (_shared/impersonation.ts).
