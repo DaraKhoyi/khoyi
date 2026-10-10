@@ -27,6 +27,7 @@
 import "../_shared/aiGuard.ts";   // no SSN, tax ID, card or bank number reaches an AI model (30 Sep)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAiUsage } from "../_shared/aiUsage.ts";
+import { requireServiceOr } from "../_shared/guard.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const MODEL = "claude-sonnet-4-6";
@@ -122,6 +123,8 @@ function facts(l: any, comps: any[]): string {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // Found 9 Oct 2026 by the signed-out edge probe (M6): the public anon key alone could run this.
+  { const gate = await requireServiceOr(req, cors); if (gate.res) return gate.res; }
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   let runId: string | null = null;
   let body_listing_id: string | null = null;
