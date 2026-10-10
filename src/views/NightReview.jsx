@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../dataService';
 import { notify } from '../notify';
 import { dateNY, timeNY } from '../clock';
+import OneTapCards from './OneTapCards';
 
 // Last night's panel.
 //
@@ -88,6 +89,8 @@ export default function NightReview() {
           : 'The panel has not run yet. It reviews at 1am and leaves its findings here.'}
       </div>
       <hr className="room-rule" />
+
+      <OneTapCards />
 
       {run && run.status === 'failed' && (
         // A failed review is stated, never silent. Dara should never wonder
